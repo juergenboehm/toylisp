@@ -16,7 +16,10 @@ but a Windows build has not yet been verified.
   case-sensitive find/replace (including Replace All).
 - Matching `()`, `[]` and `{}` highlighting at or immediately before the cursor.
   Unmatched brackets are marked. Matching is textual, including inside strings
-  and comments; language-aware highlighting is future work.
+  and comments; language-aware highlighting is future work. A `QSyntaxHighlighter`
+  caches bracket positions in each text block. Cursor movement searches this
+  metadata without copying or scanning the document text. Highlight updates are
+  coalesced until the next event-loop turn, after edited blocks have been updated.
 - Arithmetic evaluation with a shared session across all editor tabs.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
@@ -121,6 +124,23 @@ block boundaries, replacement and undo/redo, bracket matching, file round trips,
 write failures, save/discard/cancel prompts and window construction. The window test writes
 `build/toylisp-screenshot.png` when run through CTest.
 
+The separate bracket tests cover cursor boundaries, mixed nesting, Unicode offsets,
+edits to distant partners, splitting/merging blocks, undo/redo, and incremental
+metadata updates. Matching preserves the preference for the bracket at the cursor
+over the one immediately before it. Visual selections do not modify the document
+or its undo history.
+
+An optional benchmark measures metadata searches across 100,000 text lines, with
+distant and missing partners and with the cursor away from brackets:
+
+```bash
+QT_QPA_PLATFORM=offscreen ./build/toylisp_bracket_benchmarks
+```
+
+The benchmark is built with `BUILD_TESTING=ON` but is not part of CTest and has no
+timing pass/fail threshold. Partner searches still visit intervening blocks and
+bracket entries; missing or distant partners can require a document-wide search.
+
 For manual acceptance, launch the application, resize both splitters, create
 and close tabs, try save/discard/cancel, use the File dialogs, and verify
 find/replace and keyboard shortcuts. Evaluate a variable assignment in one tab
@@ -134,9 +154,11 @@ saving to work around this environment restriction.
 
 - `src/app/`: startup; the main window owns the application's evaluator registry.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
-- `src/editor/`: UI-independent block recognition and bracket matching.
+- `src/editor/`: widget-independent block recognition, bracket metadata highlighter
+  and matching. The QtGui-based bracket code is compiled into `toylisp_ui`; the
+  evaluation block helpers remain in the QtCore-only `toylisp_core`.
 - `src/evaluators/`: evaluator interface, registry and arithmetic parser/session.
-- `tests/`: Qt Test regression and integration tests.
+- `tests/`: Qt Test regression and integration tests, plus optional bracket benchmarks.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.
 
 Use `.clang-format` (LLVM base, four spaces, 100-column target) for C++ changes.

@@ -9,4 +9,3 @@ struct EvaluationBlock {
     int replacementEnd = 0;
 };
 EvaluationBlock locateBlock(const QString &document, int markerPosition);
-int matchingBracket(const QString &text, int position);

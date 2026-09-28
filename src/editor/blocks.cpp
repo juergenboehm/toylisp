@@ -34,24 +34,3 @@ EvaluationBlock locateBlock(const QString &document, int markerPosition) {
     }
     return result;
 }
-int matchingBracket(const QString &text, int position) {
-    const QString opens = "([{";
-    const QString closing = ")]}";
-    if (position < 0 || position >= text.size()) return -1;
-    bool forward = opens.contains(text[position]);
-    if (!forward && !closing.contains(text[position])) return -1;
-    QString stack;
-    int step = forward ? 1 : -1;
-    for (int i = position; i >= 0 && i < text.size(); i += step) {
-        QChar c = text[i];
-        const QString &push = forward ? opens : closing;
-        const QString &pop = forward ? closing : opens;
-        if (push.contains(c)) stack.append(c);
-        else if (pop.contains(c)) {
-            if (stack.isEmpty() || push.indexOf(stack.back()) != pop.indexOf(c)) return -1;
-            stack.chop(1);
-            if (stack.isEmpty()) return i;
-        }
-    }
-    return -1;
-}

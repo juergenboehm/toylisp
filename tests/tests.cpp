@@ -117,16 +117,6 @@ private slots:
         EvaluatorRegistry independent;
         QVERIFY(!independent.evaluate("arith", "x").ok);
     }
-    void bracketPairs() {
-        QCOMPARE(matchingBracket("([]{})", 0), 5);
-        QCOMPARE(matchingBracket("([]{})", 5), 0);
-        QCOMPARE(matchingBracket("([]{})", 1), 2);
-        QCOMPARE(matchingBracket("([]{})", 4), 3);
-        QCOMPARE(matchingBracket("(\n[1]\n)", 0), 6);
-        QCOMPARE(matchingBracket("([)]", 0), -1);
-        QCOMPARE(matchingBracket("(", 0), -1);
-        QCOMPARE(matchingBracket("", 0), -1);
-    }
     void files() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

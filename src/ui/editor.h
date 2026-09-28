@@ -15,5 +15,7 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 private:
     EvaluatorRegistry &registry;
+    bool bracketHighlightPending = false;
+    void scheduleBracketHighlight();
     void highlightBrackets();
 };

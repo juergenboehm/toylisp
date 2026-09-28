@@ -8,7 +8,8 @@ is implemented. Identity, Lisp and Macaulay2 remain planned capabilities.
 
 - `src/app/`: application entry point.
 - `src/ui/`: main window, text editors, menus and file dialogs.
-- `src/editor/`: widget-independent block and bracket operations.
+- `src/editor/`: widget-independent block operations and a QtGui bracket highlighter
+  with metadata-based matching; bracket code is built into `toylisp_ui`.
 - `src/evaluators/`: evaluator interface, registry and arithmetic environment.
 - `tests/`: Qt Test unit and integration coverage.
 - `resources/`: bundled toolbar SVG icons.
@@ -35,6 +36,13 @@ CTest uses the offscreen Qt platform. The window test emits a screenshot in the
 build directory. Check native dialogs and desktop integration manually where a
 GUI is available. Do not claim Windows verification without a Windows build.
 
+Optional bracket search benchmarks (100,000 text lines, no timing assertions) are
+built with tests but run separately from CTest:
+
+```bash
+QT_QPA_PLATFORM=offscreen ./build/toylisp_bracket_benchmarks
+```
+
 ## Architecture and behavior
 
 Keep parser/evaluator logic separate from editor UI. One application-wide registry
@@ -45,6 +53,14 @@ Markers are ordinary text. Preserve the agreed `>>`, `==`, `##` replacement
 boundaries and stop end-marker searches at the next input block. Evaluation is
 triggered only by unmodified Return at the end of an evaluation line. Output
 replacement must be one undo operation. Document undo does not undo session state.
+
+Bracket matching uses `QSyntaxHighlighter` and block-relative `QTextBlockUserData`.
+Keep cursor-triggered searches on cached metadata; do not materialize the document
+text or rehighlight it on cursor movement. Preserve textual matching of `()[]{}`,
+including in strings/comments, mixed-nesting validation, and right-before-left
+cursor priority. Coalesce editor selection updates until block metadata is current.
+Block data is owned by the document and rebuilt after edits, including undo/redo;
+use one shared block-data type when adding language-aware highlighting later.
 
 Arithmetic blocks commit assignments only after the whole block succeeds. Test
 valid and malformed input, result formatting, error lines and environment state.

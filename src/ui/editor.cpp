@@ -1,18 +1,21 @@
 #include "editor.h"
 #include "editor/blocks.h"
+#include "editor/brackets.h"
 #include <QFile>
-#include <QSaveFile>
 #include <QFontDatabase>
 #include <QKeyEvent>
+#include <QSaveFile>
 #include <QTextBlock>
 #include <QTextCodec>
+#include <QTimer>
 Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     : QPlainTextEdit(parent), registry(registry) {
     setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
-    connect(this, &QPlainTextEdit::cursorPositionChanged, this, &Editor::highlightBrackets);
-    connect(this, &QPlainTextEdit::textChanged, this, &Editor::highlightBrackets);
+    new BracketHighlighter(document());
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, &Editor::scheduleBracketHighlight);
+    connect(this, &QPlainTextEdit::textChanged, this, &Editor::scheduleBracketHighlight);
 }
 bool Editor::load(const QString &path, QString &error) {
     QFile file(path);
@@ -60,21 +63,30 @@ void Editor::keyPressEvent(QKeyEvent *event) {
     }
     QPlainTextEdit::keyPressEvent(event);
 }
+void Editor::scheduleBracketHighlight() {
+    if (bracketHighlightPending)
+        return;
+    bracketHighlightPending = true;
+    // Cursor signals can arrive during an edit, before all block data is updated.
+    // Coalesce them with textChanged and read the metadata after the edit finishes.
+    QTimer::singleShot(0, this, [this] {
+        bracketHighlightPending = false;
+        highlightBrackets();
+    });
+}
+
 void Editor::highlightBrackets() {
     QList<QTextEdit::ExtraSelection> selections;
-    QString text = toPlainText();
-    int position = textCursor().position();
-    const QString brackets = "()[]{}";
-    if (position >= text.size() || !brackets.contains(text[position])) --position;
-    if (position >= 0 && position < text.size() && brackets.contains(text[position])) {
-        int match = matchingBracket(text, position);
-        for (int index : {position, match}) {
-            if (index < 0) continue;
+    const auto match = findBracketMatch(textCursor());
+    if (match.position >= 0) {
+        for (int index : {match.position, match.partner}) {
+            if (index < 0)
+                continue;
             QTextEdit::ExtraSelection selection;
             selection.cursor = textCursor();
             selection.cursor.setPosition(index);
-            selection.cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor);
-            selection.format.setBackground(match < 0 ? QColor("#ffb4a9") : QColor("#a9d9bb"));
+            selection.cursor.setPosition(index + 1, QTextCursor::KeepAnchor);
+            selection.format.setBackground(match.partner < 0 ? QColor("#ffb4a9") : QColor("#a9d9bb"));
             selection.format.setForeground(Qt::black);
             selections.append(selection);
         }
