@@ -12,7 +12,7 @@ Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     : QPlainTextEdit(parent)
     , registry(registry)
 {
-    setFont(QFont("Segoe UI", 10));
+    setFont(QFont("Courier New", 10));
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
     new BracketHighlighter(document());
@@ -74,7 +74,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
     if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)
         && event->modifiers() == Qt::NoModifier && !cursor.hasSelection() && cursor.atBlockEnd()
         && cursor.block().text().startsWith("==")) {
-        auto block = locateBlock(toPlainText(), cursor.block().position());
+        auto block = locateBlock(cursor.block());
         if (!block.valid) {
             emit diagnostic(block.error);
             return;

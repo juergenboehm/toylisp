@@ -8,8 +8,8 @@ is implemented. Identity, Lisp and Macaulay2 remain planned capabilities.
 
 - `src/app/`: application entry point.
 - `src/ui/`: main window, text editors, menus and file dialogs.
-- `src/editor/`: widget-independent block operations and a QtGui bracket highlighter
-  with metadata-based matching; bracket code is built into `toylisp_ui`.
+- `src/editor/`: widget-independent QtGui block operations and a bracket highlighter
+  with metadata-based matching; both are built into `toylisp_ui`.
 - `src/evaluators/`: evaluator interface, registry and arithmetic environment.
 - `tests/`: Qt Test unit and integration coverage.
 - `resources/`: bundled toolbar SVG icons.
@@ -46,8 +46,8 @@ QT_QPA_PLATFORM=offscreen ./build/toylisp_bracket_benchmarks
 ## Architecture and behavior
 
 The application uses Qt's Fusion widget style and requests Segoe UI at 9 points
-for the application and 10 points for editors. Qt handles font substitution when
-needed; user-configurable fonts remain planned.
+for the application and Courier New at 10 points for editors. Qt handles font
+substitution when needed; user-configurable fonts remain planned.
 
 Keep parser/evaluator logic separate from editor UI. One application-wide registry
 owns one persistent environment per evaluator; editors do not own environments.
@@ -57,6 +57,10 @@ Markers are ordinary text. Preserve the agreed `>>`, `==`, `##` replacement
 boundaries and stop end-marker searches at the next input block. Evaluation is
 triggered only by unmodified Return at the end of an evaluation line. Output
 replacement must be one undo operation. Document undo does not undo session state.
+Locate evaluation blocks by traversing `QTextBlock`s from the evaluation marker;
+do not flatten or split the entire document. Preserve plain-text normalization
+of non-breaking spaces and soft line breaks, including marker boundaries within
+a text block. Keep evaluator code in the QtCore-only `toylisp_core`.
 
 Bracket matching uses `QSyntaxHighlighter` and block-relative `QTextBlockUserData`.
 Keep cursor-triggered searches on cached metadata; do not materialize the document

@@ -1,42 +1,64 @@
 #include "blocks.h"
 #include <QStringList>
-#include <QVector>
 
-EvaluationBlock locateBlock(const QString &document, int markerPosition)
+namespace {
+QStringList plainTextLines(const QTextBlock &block)
+{
+    // Preserve toPlainText() normalization locally. A soft line break does not
+    // start a new QTextBlock, but still separates input lines and markers.
+    QString text = block.text();
+    text.replace(QChar::Nbsp, QLatin1Char(' '));
+    return text.split(QChar::LineSeparator);
+}
+} // namespace
+
+EvaluationBlock locateBlock(const QTextBlock &markerBlock)
 {
     EvaluationBlock result;
-    const auto lines = document.split('\n');
-    QVector<int> offsets;
-    int offset = 0;
-    int marker = -1;
-    for (int i = 0; i < lines.size(); ++i) {
-        offsets.append(offset);
-        if (offset == markerPosition)
-            marker = i;
-        offset += lines[i].size() + 1;
-    }
-    if (marker < 0 || !lines[marker].startsWith("==")) {
+    if (!markerBlock.isValid() || !markerBlock.text().startsWith("==")) {
         result.error = "Invalid evaluation marker";
         return result;
     }
-    int start = marker - 1;
-    while (start >= 0 && lines[start] != ">>")
-        --start;
-    if (start < 0) {
+
+    QStringList inputLines;
+    bool foundStart = false;
+    for (auto block = markerBlock.previous(); block.isValid() && !foundStart;
+         block = block.previous()) {
+        const auto lines = plainTextLines(block);
+        for (int i = lines.size() - 1; i >= 0; --i) {
+            if (lines[i] == ">>") {
+                foundStart = true;
+                break;
+            }
+            inputLines.prepend(lines[i]);
+        }
+    }
+    if (!foundStart) {
         result.error = "Missing >> marker";
         return result;
     }
+
+    const auto markerLines = plainTextLines(markerBlock);
     result.valid = true;
-    result.evaluator = lines[marker].mid(2).trimmed();
-    result.input = lines.mid(start + 1, marker - start - 1).join('\n');
-    result.insertion = offsets[marker] + lines[marker].size();
+    result.evaluator = markerLines.first().mid(2).trimmed();
+    result.input = inputLines.join('\n');
+    result.insertion = markerBlock.position() + markerLines.first().size();
     result.replacementEnd = result.insertion;
-    for (int i = marker + 1; i < lines.size(); ++i) {
-        if (lines[i] == ">>")
-            break;
-        if (lines[i] == "##") {
-            result.replacementEnd = offsets[i] + lines[i].size();
-            break;
+
+    for (auto block = markerBlock; block.isValid(); block = block.next()) {
+        const auto lines = block == markerBlock ? markerLines : plainTextLines(block);
+        int position = block.position();
+        for (int i = 0; i < lines.size(); ++i) {
+            const auto &line = lines[i];
+            if (block != markerBlock || i > 0) {
+                if (line == ">>")
+                    return result;
+                if (line == "##") {
+                    result.replacementEnd = position + line.size();
+                    return result;
+                }
+            }
+            position += line.size() + 1;
         }
     }
     return result;

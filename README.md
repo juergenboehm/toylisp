@@ -13,7 +13,7 @@ but a Windows build has not yet been verified.
   Saves use `QSaveFile` for atomic replacement. Invalid UTF-8 is rejected.
   CRLF files retain CRLF when saved; new files use LF. Mixed endings are normalized.
 - Qt's Fusion widget style, with Segoe UI requested at 9 points for the application
-  and 10 points for editors. Qt substitutes an available font if needed.
+  and Courier New at 10 points for editors. Qt substitutes an available font if needed.
 - Text editors with undo/redo, clipboard operations, select all and
   case-sensitive find/replace (including Replace All).
 - Matching `()`, `[]` and `{}` highlighting at or immediately before the cursor.
@@ -59,6 +59,12 @@ Return without modifiers at the end of an evaluation line evaluates all text
 between the nearest preceding `>>` and that line, excluding the markers.
 Opening files, pasting text and typing Return elsewhere do not evaluate anything.
 A missing start marker reports a diagnostic without modifying the document.
+
+Block lookup traverses the document's text blocks starting at the evaluation
+marker, without copying or splitting the entire document. Only the surrounding
+input and output region is visited; missing markers can still require a search
+to the beginning or end of the document. Non-breaking spaces and soft line breaks
+retain their plain-text interpretation during evaluation.
 
 An existing result through the next standalone `##` is replaced. The search
 stops at the next standalone `>>`. If no closing marker exists before that
@@ -126,6 +132,11 @@ block boundaries, replacement and undo/redo, bracket matching, file round trips,
 write failures, save/discard/cancel prompts and window construction. The window test writes
 `build/toylisp-screenshot.png` when run through CTest.
 
+The separate evaluation block tests cover exact marker boundaries, missing markers,
+empty lines, Unicode positions and normalization, large surrounding documents,
+and block edits with undo/redo. Editor integration tests check that replacement
+preserves surrounding text and remains a single undo operation.
+
 The separate bracket tests cover cursor boundaries, mixed nesting, Unicode offsets,
 edits to distant partners, splitting/merging blocks, undo/redo, and incremental
 metadata updates. Matching preserves the preference for the bracket at the cursor
@@ -157,8 +168,8 @@ saving to work around this environment restriction.
 - `src/app/`: startup; the main window owns the application's evaluator registry.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
 - `src/editor/`: widget-independent block recognition, bracket metadata highlighter
-  and matching. The QtGui-based bracket code is compiled into `toylisp_ui`; the
-  evaluation block helpers remain in the QtCore-only `toylisp_core`.
+  and matching. This QtGui-based code is compiled into `toylisp_ui`;
+  `toylisp_core` contains only the QtCore-based evaluators.
 - `src/evaluators/`: evaluator interface, registry and arithmetic parser/session.
 - `tests/`: Qt Test regression and integration tests, plus optional bracket benchmarks.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.

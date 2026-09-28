@@ -96,6 +96,17 @@ private slots:
             << ">>\n2+3\n==\nold\n>>\n7\n==\n7\n##" << ">>\n2+3\n==\n5\n##\nold\n>>\n7\n==\n7\n##";
         QTest::newRow("explicit") << ">>\n2+3\n==arith" << ">>\n2+3\n==arith\n5\n##";
         QTest::newRow("empty") << ">>\n==" << ">>\n==\n##";
+        QTest::newRow("unicode-surroundings") << QString::fromUtf8("😀\n>>\n2+3\n==\n😀\n##\n尾")
+                                              << QString::fromUtf8("😀\n>>\n2+3\n==\n5\n##\n尾");
+        QTest::newRow("blank-input-lines") << ">>\n\n2+3\n\n==\nold\n##\n"
+                                           << ">>\n\n2+3\n\n==\n5\n##\n";
+        QTest::newRow("nearest-start")
+            << ">>\nignored\n>>\n2+3\n==" << ">>\nignored\n>>\n2+3\n==\n5\n##";
+        QTest::newRow("soft-input-lines")
+            << ">>\nx\u00a0=\u00a03\u2028x+1\n==" << ">>\nx = 3\nx+1\n==\n4\n##";
+        QTest::newRow("soft-marker-boundaries")
+            << "prefix\u2028>>\u20282+3\n==arith\u2028old\u2028##\u2028tail"
+            << "prefix\n>>\n2+3\n==arith\n5\n##\ntail";
     }
     void blocks()
     {
@@ -104,10 +115,11 @@ private slots:
         EvaluatorRegistry registry;
         Editor editor(registry);
         editor.setPlainText(input);
+        const QString original = editor.document()->toRawText();
         evaluate(editor);
         QCOMPARE(editor.toPlainText(), expected);
         editor.undo();
-        QCOMPARE(editor.toPlainText(), input);
+        QCOMPARE(editor.document()->toRawText(), original);
         editor.redo();
         QCOMPARE(editor.toPlainText(), expected);
         evaluate(editor);
@@ -128,7 +140,8 @@ private slots:
         editor.setPlainText(">>\n1/0\n==");
         evaluate(editor);
         QVERIFY(editor.toPlainText().contains("Error in line 1: Division by zero\n##"));
-        QVERIFY(!locateBlock(">>\n1\n ==", 5).valid);
+        editor.setPlainText(">>\n1\n ==");
+        QVERIFY(!locateBlock(editor.document()->lastBlock()).valid);
     }
     void sharedSessionSurvivesEditor()
     {
