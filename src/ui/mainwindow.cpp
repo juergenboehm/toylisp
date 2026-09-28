@@ -19,7 +19,8 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 
-MainWindow::MainWindow() {
+MainWindow::MainWindow()
+{
     Q_INIT_RESOURCE(icons);
     setWindowTitle("ToyLisp");
     resize(1100, 760);
@@ -56,7 +57,9 @@ MainWindow::MainWindow() {
     };
     addFileAction("&New", ":/icons/new.svg", QKeySequence::New, [this] { addEditor(); });
     addFileAction("&Open…", ":/icons/open.svg", QKeySequence::Open, [this] { openFile(); });
-    addFileAction("&Save", ":/icons/save.svg", QKeySequence::Save, [this] { saveEditor(currentEditor()); });
+    addFileAction("&Save", ":/icons/save.svg", QKeySequence::Save, [this] {
+        saveEditor(currentEditor());
+    });
     auto *saveAs = file->addAction("Save &As…");
     saveAs->setShortcut(QKeySequence::SaveAs);
     connect(saveAs, &QAction::triggered, this, [this] { saveEditor(currentEditor(), true); });
@@ -71,7 +74,8 @@ MainWindow::MainWindow() {
         auto *action = edit->addAction(title);
         action->setShortcut(key);
         connect(action, &QAction::triggered, this, [this, function] {
-            if (auto *editor = currentEditor()) (editor->*function)();
+            if (auto *editor = currentEditor())
+                (editor->*function)();
         });
     };
     addEditAction("&Undo", QKeySequence::Undo, &Editor::undo);
@@ -89,18 +93,25 @@ MainWindow::MainWindow() {
     auto *selector = new QComboBox(toolbar);
     selector->addItem("Arithmetic", "arith");
     toolbar->addWidget(selector);
-    connect(selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this, selector] { registry.defaultName = selector->currentData().toString(); });
+    connect(selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, selector] {
+        registry.defaultName = selector->currentData().toString();
+    });
     statusBar()->showMessage("Ready — enter >>, input, then == and Return to evaluate");
     addEditor();
 }
-Editor *MainWindow::currentEditor() const { return qobject_cast<Editor *>(editors->currentWidget()); }
-Editor *MainWindow::addEditor() {
+Editor *MainWindow::currentEditor() const
+{
+    return qobject_cast<Editor *>(editors->currentWidget());
+}
+Editor *MainWindow::addEditor()
+{
     auto *editor = new Editor(registry, editors);
     editor->setProperty("untitledName", QString("Untitled %1").arg(++untitledCount));
     editors->addTab(editor, editor->property("untitledName").toString());
     editors->setCurrentWidget(editor);
-    connect(editor->document(), &QTextDocument::modificationChanged, this, [this, editor] { updateTitle(editor); });
+    connect(editor->document(), &QTextDocument::modificationChanged, this, [this, editor] {
+        updateTitle(editor);
+    });
     connect(editor, &Editor::diagnostic, this, [this, editor](const QString &message) {
         output->appendPlainText(editors->tabText(editors->indexOf(editor)) + ": " + message);
         statusBar()->showMessage(message, 10000);
@@ -108,19 +119,24 @@ Editor *MainWindow::addEditor() {
     editor->setFocus();
     return editor;
 }
-void MainWindow::updateTitle(Editor *editor) {
+void MainWindow::updateTitle(Editor *editor)
+{
     int index = editors->indexOf(editor);
-    QString name = editor->filePath.isEmpty() ? editor->property("untitledName").toString() : QFileInfo(editor->filePath).fileName();
+    QString name = editor->filePath.isEmpty() ? editor->property("untitledName").toString()
+                                              : QFileInfo(editor->filePath).fileName();
     editors->setTabText(index, name + (editor->document()->isModified() ? " *" : ""));
     editors->setTabToolTip(index, editor->filePath);
 }
-void MainWindow::openFile() {
+void MainWindow::openFile()
+{
     QString path = QFileDialog::getOpenFileName(this, "Open text file");
-    if (path.isEmpty()) return;
+    if (path.isEmpty())
+        return;
     for (int i = 0; i < editors->count(); ++i) {
         auto *editor = qobject_cast<Editor *>(editors->widget(i));
         if (QFileInfo(editor->filePath).canonicalFilePath() == QFileInfo(path).canonicalFilePath()) {
-            editors->setCurrentIndex(i); return;
+            editors->setCurrentIndex(i);
+            return;
         }
     }
     auto *editor = addEditor();
@@ -133,38 +149,60 @@ void MainWindow::openFile() {
     }
     updateTitle(editor);
 }
-bool MainWindow::saveEditor(Editor *editor, bool saveAs) {
-    if (!editor) return true;
+bool MainWindow::saveEditor(Editor *editor, bool saveAs)
+{
+    if (!editor)
+        return true;
     QString path = editor->filePath;
-    if (path.isEmpty() || saveAs) path = QFileDialog::getSaveFileName(this, "Save text file", path);
-    if (path.isEmpty()) return false;
+    if (path.isEmpty() || saveAs)
+        path = QFileDialog::getSaveFileName(this, "Save text file", path);
+    if (path.isEmpty())
+        return false;
     QString error;
-    if (!editor->save(path, error)) { QMessageBox::warning(this, "Save failed", error); return false; }
+    if (!editor->save(path, error)) {
+        QMessageBox::warning(this, "Save failed", error);
+        return false;
+    }
     updateTitle(editor);
     return true;
 }
-bool MainWindow::confirmClose(Editor *editor) {
-    if (!editor || !editor->document()->isModified()) return true;
-    auto answer = QMessageBox::question(this, "Unsaved changes", "Save changes to " + editors->tabText(editors->indexOf(editor)) + "?",
-                                        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
-    if (answer == QMessageBox::Cancel) return false;
+bool MainWindow::confirmClose(Editor *editor)
+{
+    if (!editor || !editor->document()->isModified())
+        return true;
+    auto answer = QMessageBox::question(
+        this,
+        "Unsaved changes",
+        "Save changes to " + editors->tabText(editors->indexOf(editor)) + "?",
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save);
+    if (answer == QMessageBox::Cancel)
+        return false;
     return answer == QMessageBox::Discard || saveEditor(editor);
 }
-void MainWindow::closeTab(int index) {
+void MainWindow::closeTab(int index)
+{
     auto *editor = qobject_cast<Editor *>(editors->widget(index));
-    if (!editor || !confirmClose(editor)) return;
+    if (!editor || !confirmClose(editor))
+        return;
     editors->removeTab(index);
     editor->deleteLater();
 }
-void MainWindow::closeEvent(QCloseEvent *event) {
+void MainWindow::closeEvent(QCloseEvent *event)
+{
     for (int i = 0; i < editors->count(); ++i) {
-        if (!confirmClose(qobject_cast<Editor *>(editors->widget(i)))) { event->ignore(); return; }
+        if (!confirmClose(qobject_cast<Editor *>(editors->widget(i)))) {
+            event->ignore();
+            return;
+        }
     }
     event->accept();
 }
-void MainWindow::findReplace() {
+void MainWindow::findReplace()
+{
     auto *editor = currentEditor();
-    if (!editor) return;
+    if (!editor)
+        return;
     QDialog dialog(this);
     dialog.setWindowTitle("Find / Replace");
     auto *layout = new QFormLayout(&dialog);
@@ -177,31 +215,37 @@ void MainWindow::findReplace() {
     layout->addRow(&all);
     layout->addRow(&feedback);
     auto findNext = [&] {
-        if (search.text().isEmpty()) return;
+        if (search.text().isEmpty())
+            return;
         bool found = editor->find(search.text(), QTextDocument::FindCaseSensitively);
         if (!found) {
             auto original = editor->textCursor();
             editor->moveCursor(QTextCursor::Start);
             found = editor->find(search.text(), QTextDocument::FindCaseSensitively);
-            if (!found) editor->setTextCursor(original);
+            if (!found)
+                editor->setTextCursor(original);
         }
         feedback.setText(found ? "Match selected" : "No match");
     };
     connect(&next, &QPushButton::clicked, &dialog, findNext);
     connect(&replace, &QPushButton::clicked, &dialog, [&] {
         auto cursor = editor->textCursor();
-        if (!search.text().isEmpty() && cursor.selectedText() == search.text()) cursor.insertText(replacement.text());
+        if (!search.text().isEmpty() && cursor.selectedText() == search.text())
+            cursor.insertText(replacement.text());
         findNext();
     });
     connect(&all, &QPushButton::clicked, &dialog, [&] {
-        if (search.text().isEmpty()) return;
+        if (search.text().isEmpty())
+            return;
         auto group = editor->textCursor();
         group.beginEditBlock();
         QTextCursor cursor(editor->document());
         int count = 0;
         while (true) {
-            cursor = editor->document()->find(search.text(), cursor, QTextDocument::FindCaseSensitively);
-            if (cursor.isNull()) break;
+            cursor = editor->document()
+                         ->find(search.text(), cursor, QTextDocument::FindCaseSensitively);
+            if (cursor.isNull())
+                break;
             cursor.insertText(replacement.text());
             ++count;
         }

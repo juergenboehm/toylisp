@@ -1,15 +1,18 @@
 #pragma once
-#include <QMainWindow>
 #include "evaluators/evaluator.h"
+#include <QMainWindow>
 class Editor;
 class QTabWidget;
 class QPlainTextEdit;
-class MainWindow : public QMainWindow {
+class MainWindow : public QMainWindow
+{
     Q_OBJECT
 public:
     MainWindow();
+
 protected:
     void closeEvent(QCloseEvent *event) override;
+
 private:
     EvaluatorRegistry registry;
     QTabWidget *editors;

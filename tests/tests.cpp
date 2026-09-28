@@ -1,22 +1,25 @@
-#include <QtTest>
-#include <QFile>
-#include <QTemporaryDir>
-#include <QTabWidget>
-#include <QSplitter>
-#include <QToolBar>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QTimer>
-#include "evaluators/evaluator.h"
 #include "editor/blocks.h"
+#include "evaluators/evaluator.h"
 #include "ui/editor.h"
 #include "ui/mainwindow.h"
+#include <QFile>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QSplitter>
+#include <QTabWidget>
+#include <QTemporaryDir>
+#include <QTimer>
+#include <QToolBar>
+#include <QtTest>
 
-class Tests : public QObject {
+class Tests : public QObject
+{
     Q_OBJECT
-    static void evaluate(Editor &editor, int occurrence = 0) {
+    static void evaluate(Editor &editor, int occurrence = 0)
+    {
         int position = -1;
-        for (int i = 0; i <= occurrence; ++i) position = editor.toPlainText().indexOf("==", position + 1);
+        for (int i = 0; i <= occurrence; ++i)
+            position = editor.toPlainText().indexOf("==", position + 1);
         auto cursor = editor.textCursor();
         cursor.setPosition(position);
         cursor.movePosition(QTextCursor::EndOfBlock);
@@ -24,7 +27,8 @@ class Tests : public QObject {
         QTest::keyClick(&editor, Qt::Key_Return);
     }
 private slots:
-    void arithmetic_data() {
+    void arithmetic_data()
+    {
         QTest::addColumn<QString>("input");
         QTest::addColumn<QString>("expected");
         QTest::newRow("precedence") << "2+3*4" << "14";
@@ -35,26 +39,42 @@ private slots:
         QTest::newRow("assignment") << "x = 3\n\nx * (x + 1)" << "12";
         QTest::newRow("empty") << "\n  " << "";
     }
-    void arithmetic() {
-        QFETCH(QString, input); QFETCH(QString, expected);
+    void arithmetic()
+    {
+        QFETCH(QString, input);
+        QFETCH(QString, expected);
         ArithmeticEvaluator evaluator;
         auto result = evaluator.evaluate(input);
         QVERIFY2(result.ok, qPrintable(result.text));
         QCOMPARE(result.text, expected);
     }
-    void malformed_data() {
+    void malformed_data()
+    {
         QTest::addColumn<QString>("input");
-        for (const auto &input : {"1/0", "missing", "(1+2", "1 2", "1=3", "x=", "x==3", "2**3", "1e999", "1e308*1e308", "2+"})
+        for (const auto &input :
+             {"1/0",
+              "missing",
+              "(1+2",
+              "1 2",
+              "1=3",
+              "x=",
+              "x==3",
+              "2**3",
+              "1e999",
+              "1e308*1e308",
+              "2+"})
             QTest::newRow(input) << QString(input);
     }
-    void malformed() {
+    void malformed()
+    {
         QFETCH(QString, input);
         ArithmeticEvaluator evaluator;
         auto result = evaluator.evaluate("\n" + input);
         QVERIFY(!result.ok);
         QVERIFY(result.text.startsWith("Error in line 2:"));
     }
-    void transactionalEnvironment() {
+    void transactionalEnvironment()
+    {
         ArithmeticEvaluator first, second;
         QVERIFY(first.evaluate("x=7").ok);
         QVERIFY(!first.evaluate("x=9\ny=2\n1/0").ok);
@@ -64,17 +84,23 @@ private slots:
         QString deep(300, '(');
         QVERIFY(!first.evaluate(deep + "1" + QString(300, ')')).ok);
     }
-    void blocks_data() {
-        QTest::addColumn<QString>("input"); QTest::addColumn<QString>("expected");
+    void blocks_data()
+    {
+        QTest::addColumn<QString>("input");
+        QTest::addColumn<QString>("expected");
         QTest::newRow("first") << ">>\n2+3\n==" << ">>\n2+3\n==\n5\n##";
-        QTest::newRow("replace-multiline") << ">>\n2+3\n==\nold\nresult\n##\ntail" << ">>\n2+3\n==\n5\n##\ntail";
+        QTest::newRow("replace-multiline")
+            << ">>\n2+3\n==\nold\nresult\n##\ntail" << ">>\n2+3\n==\n5\n##\ntail";
         QTest::newRow("missing-end") << ">>\n2+3\n==\nkeep" << ">>\n2+3\n==\n5\n##\nkeep";
-        QTest::newRow("next-block-boundary") << ">>\n2+3\n==\nold\n>>\n7\n==\n7\n##" << ">>\n2+3\n==\n5\n##\nold\n>>\n7\n==\n7\n##";
+        QTest::newRow("next-block-boundary")
+            << ">>\n2+3\n==\nold\n>>\n7\n==\n7\n##" << ">>\n2+3\n==\n5\n##\nold\n>>\n7\n==\n7\n##";
         QTest::newRow("explicit") << ">>\n2+3\n==arith" << ">>\n2+3\n==arith\n5\n##";
         QTest::newRow("empty") << ">>\n==" << ">>\n==\n##";
     }
-    void blocks() {
-        QFETCH(QString, input); QFETCH(QString, expected);
+    void blocks()
+    {
+        QFETCH(QString, input);
+        QFETCH(QString, expected);
         EvaluatorRegistry registry;
         Editor editor(registry);
         editor.setPlainText(input);
@@ -87,7 +113,8 @@ private slots:
         evaluate(editor);
         QCOMPARE(editor.toPlainText(), expected);
     }
-    void missingStartAndErrors() {
+    void missingStartAndErrors()
+    {
         EvaluatorRegistry registry;
         Editor editor(registry);
         QSignalSpy messages(&editor, &Editor::diagnostic);
@@ -103,7 +130,8 @@ private slots:
         QVERIFY(editor.toPlainText().contains("Error in line 1: Division by zero\n##"));
         QVERIFY(!locateBlock(">>\n1\n ==", 5).valid);
     }
-    void sharedSessionSurvivesEditor() {
+    void sharedSessionSurvivesEditor()
+    {
         EvaluatorRegistry registry;
         {
             Editor first(registry);
@@ -117,7 +145,8 @@ private slots:
         EvaluatorRegistry independent;
         QVERIFY(!independent.evaluate("arith", "x").ok);
     }
-    void files() {
+    void files()
+    {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         EvaluatorRegistry registry;
@@ -137,16 +166,21 @@ private slots:
         QCOMPARE(loaded.filePath, path);
         QFile file(path);
         QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write("one\r\ntwo\r\n"); file.close();
+        file.write("one\r\ntwo\r\n");
+        file.close();
         QVERIFY(loaded.load(path, error));
         QVERIFY(loaded.crlf);
         QVERIFY(loaded.save(path, error));
         QVERIFY(file.open(QIODevice::ReadOnly));
-        QCOMPARE(file.readAll(), QByteArray("one\r\ntwo\r\n")); file.close();
-        QVERIFY(file.open(QIODevice::WriteOnly)); file.write("\xff"); file.close();
+        QCOMPARE(file.readAll(), QByteArray("one\r\ntwo\r\n"));
+        file.close();
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("\xff");
+        file.close();
         QVERIFY(!loaded.load(path, error));
     }
-    void closePromptsAndTabActions() {
+    void closePromptsAndTabActions()
+    {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         MainWindow window;
@@ -162,7 +196,8 @@ private slots:
         auto answer = [](QMessageBox::StandardButton choice) {
             QTimer::singleShot(0, [choice] {
                 auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
-                if (message) message->button(choice)->click();
+                if (message)
+                    message->button(choice)->click();
             });
         };
         answer(QMessageBox::Cancel);
@@ -185,7 +220,8 @@ private slots:
         QCOMPARE(tabs->count(), 1);
         QCOMPARE(tabs->currentWidget(), editor);
     }
-    void windowAndScreenshot() {
+    void windowAndScreenshot()
+    {
         MainWindow window;
         window.show();
         QTest::qWait(50);
@@ -193,7 +229,8 @@ private slots:
         QCOMPARE(window.findChildren<QTabWidget *>().size(), 3);
         auto *toolbar = window.findChild<QToolBar *>();
         QVERIFY(toolbar);
-        for (int i = 0; i < 3; ++i) QVERIFY(!toolbar->actions()[i]->icon().pixmap(24).isNull());
+        for (int i = 0; i < 3; ++i)
+            QVERIFY(!toolbar->actions()[i]->icon().pixmap(24).isNull());
         auto *editor = window.findChild<Editor *>();
         QVERIFY(editor);
         editor->setPlainText(">>\nx = 3\nx * (x + 1)\n==");

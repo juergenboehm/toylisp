@@ -12,7 +12,9 @@ but a Windows build has not yet been verified.
 - UTF-8 text files, Save As, modified indicators and save/discard/cancel prompts.
   Saves use `QSaveFile` for atomic replacement. Invalid UTF-8 is rejected.
   CRLF files retain CRLF when saved; new files use LF. Mixed endings are normalized.
-- Monospaced editors with undo/redo, clipboard operations, select all and
+- Qt's Fusion widget style, with Segoe UI requested at 9 points for the application
+  and 10 points for editors. Qt substitutes an available font if needed.
+- Text editors with undo/redo, clipboard operations, select all and
   case-sensitive find/replace (including Replace All).
 - Matching `()`, `[]` and `{}` highlighting at or immediately before the cursor.
   Unmatched brackets are marked. Matching is textual, including inside strings
@@ -161,7 +163,11 @@ saving to work around this environment restriction.
 - `tests/`: Qt Test regression and integration tests, plus optional bracket benchmarks.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.
 
-Use `.clang-format` (LLVM base, four spaces, 100-column target) for C++ changes.
+Use the repository's `.clang-format` for C++ changes. It was exported from CLion's
+Qt preset and uses four-space indentation and a 100-column target.
+`BasedOnStyle: LLVM` supplies defaults; the explicit options implement the selected
+Qt-based style. Configure CLion to use this file when formatting C++ code.
+
 Keep evaluator and block logic independent of widgets. See `AGENTS.md` for
 contributor instructions. README.md and AGENTS.md are updated as capabilities,
 commands and layout change.

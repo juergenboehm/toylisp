@@ -10,24 +10,24 @@ add_library(toylisp_core src/evaluators/evaluator.cpp src/editor/blocks.cpp)
 target_include_directories(toylisp_core PUBLIC src)
 target_link_libraries(toylisp_core PUBLIC Qt5::Core)
 add_library(toylisp_ui
-  src/ui/editor.cpp
-  src/ui/mainwindow.cpp
-  src/editor/brackets.cpp
-  resources/icons.qrc)
+        src/ui/editor.cpp
+        src/ui/mainwindow.cpp
+        src/editor/brackets.cpp
+        resources/icons.qrc)
 target_link_libraries(toylisp_ui PUBLIC toylisp_core Qt5::Widgets)
 add_executable(toylisp src/app/main.cpp)
 target_link_libraries(toylisp PRIVATE toylisp_ui)
 include(CTest)
-if(BUILD_TESTING)
-  find_package(Qt5 5.12 REQUIRED COMPONENTS Test)
-  add_executable(toylisp_tests tests/tests.cpp)
-  target_link_libraries(toylisp_tests PRIVATE toylisp_ui Qt5::Test)
-  add_test(NAME toylisp_tests COMMAND toylisp_tests)
-  add_executable(toylisp_bracket_tests tests/brackettests.cpp)
-  target_link_libraries(toylisp_bracket_tests PRIVATE toylisp_ui Qt5::Test)
-  add_test(NAME toylisp_bracket_tests COMMAND toylisp_bracket_tests)
-  add_executable(toylisp_bracket_benchmarks tests/bracketbenchmarks.cpp)
-  target_link_libraries(toylisp_bracket_benchmarks PRIVATE toylisp_ui Qt5::Test)
-  set_tests_properties(toylisp_tests toylisp_bracket_tests
-    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-endif()
+if (BUILD_TESTING)
+    find_package(Qt5 5.12 REQUIRED COMPONENTS Test)
+    add_executable(toylisp_tests tests/tests.cpp)
+    target_link_libraries(toylisp_tests PRIVATE toylisp_ui Qt5::Test)
+    add_test(NAME toylisp_tests COMMAND toylisp_tests)
+    add_executable(toylisp_bracket_tests tests/brackettests.cpp)
+    target_link_libraries(toylisp_bracket_tests PRIVATE toylisp_ui Qt5::Test)
+    add_test(NAME toylisp_bracket_tests COMMAND toylisp_bracket_tests)
+    add_executable(toylisp_bracket_benchmarks tests/bracketbenchmarks.cpp)
+    target_link_libraries(toylisp_bracket_benchmarks PRIVATE toylisp_ui Qt5::Test)
+    set_tests_properties(toylisp_tests toylisp_bracket_tests
+            PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif ()

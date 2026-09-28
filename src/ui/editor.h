@@ -1,7 +1,8 @@
 #pragma once
-#include <QPlainTextEdit>
 #include "evaluators/evaluator.h"
-class Editor : public QPlainTextEdit {
+#include <QPlainTextEdit>
+class Editor : public QPlainTextEdit
+{
     Q_OBJECT
 public:
     explicit Editor(EvaluatorRegistry &registry, QWidget *parent = nullptr);
@@ -11,8 +12,10 @@ public:
     bool save(const QString &path, QString &error);
 signals:
     void diagnostic(const QString &message);
+
 protected:
     void keyPressEvent(QKeyEvent *event) override;
+
 private:
     EvaluatorRegistry &registry;
     bool bracketHighlightPending = false;

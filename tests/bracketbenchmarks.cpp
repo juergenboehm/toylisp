@@ -4,11 +4,13 @@
 #include <QTextDocument>
 #include <QtTest>
 
-class BracketBenchmarks : public QObject {
+class BracketBenchmarks : public QObject
+{
     Q_OBJECT
 
 private slots:
-    void matching_data() {
+    void matching_data()
+    {
         QTest::addColumn<bool>("hasPartner");
         QTest::addColumn<bool>("backward");
         QTest::addColumn<bool>("awayFromBracket");
@@ -18,7 +20,8 @@ private slots:
         QTest::newRow("away-from-bracket") << true << false << true;
     }
 
-    void matching() {
+    void matching()
+    {
         QFETCH(bool, hasPartner);
         QFETCH(bool, backward);
         QFETCH(bool, awayFromBracket);
@@ -32,7 +35,8 @@ private slots:
         cursor.setPosition(awayFromBracket ? 4 : backward ? text.size() : 0);
 
         BracketMatch match;
-        QBENCHMARK {
+        QBENCHMARK
+        {
             match = findBracketMatch(cursor);
         }
         const int expectedPosition = backward ? text.size() - 1 : 0;

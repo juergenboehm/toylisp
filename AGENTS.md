@@ -45,6 +45,10 @@ QT_QPA_PLATFORM=offscreen ./build/toylisp_bracket_benchmarks
 
 ## Architecture and behavior
 
+The application uses Qt's Fusion widget style and requests Segoe UI at 9 points
+for the application and 10 points for editors. Qt handles font substitution when
+needed; user-configurable fonts remain planned.
+
 Keep parser/evaluator logic separate from editor UI. One application-wide registry
 owns one persistent environment per evaluator; editors do not own environments.
 Evaluator overrides and the global default must use that same registry.
@@ -69,7 +73,10 @@ existing files when atomic saving fails.
 
 ## Style and validation
 
-Use C++17, four-space indentation and `.clang-format` (LLVM base, 100 columns).
+Use C++17 and the repository's `.clang-format`, exported from CLion's Qt preset
+(four-space indentation, 100-column target). Its LLVM base supplies defaults;
+preserve the explicit options implementing the selected Qt-based style. Keep IDE
+formatting consistent with this file.
 Use PascalCase for types and camelCase for functions and variables. Prefer
 specific names distinguishing editor behavior from evaluator behavior. Avoid
 platform-specific APIs when Qt provides a portable equivalent.

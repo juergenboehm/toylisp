@@ -1,6 +1,7 @@
 #pragma once
 #include <QString>
-struct EvaluationBlock {
+struct EvaluationBlock
+{
     bool valid = false;
     QString error;
     QString input;

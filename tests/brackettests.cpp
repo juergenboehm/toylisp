@@ -5,28 +5,33 @@
 #include <QTextDocument>
 #include <QtTest>
 
-class CountingHighlighter : public BracketHighlighter {
+class CountingHighlighter : public BracketHighlighter
+{
 public:
     using BracketHighlighter::BracketHighlighter;
     QVector<int> highlightedBlocks;
 
 protected:
-    void highlightBlock(const QString &text) override {
+    void highlightBlock(const QString &text) override
+    {
         highlightedBlocks.append(currentBlock().blockNumber());
         BracketHighlighter::highlightBlock(text);
     }
 };
 
-class BracketTests : public QObject {
+class BracketTests : public QObject
+{
     Q_OBJECT
 
-    static void moveCursor(Editor &editor, int position) {
+    static void moveCursor(Editor &editor, int position)
+    {
         auto cursor = editor.textCursor();
         cursor.setPosition(position);
         editor.setTextCursor(cursor);
     }
 
-    static QVector<int> highlightedPositions(const Editor &editor) {
+    static QVector<int> highlightedPositions(const Editor &editor)
+    {
         QVector<int> positions;
         for (const auto &selection : editor.extraSelections())
             positions.append(selection.cursor.selectionStart());
@@ -34,7 +39,8 @@ class BracketTests : public QObject {
     }
 
 private slots:
-    void matching_data() {
+    void matching_data()
+    {
         QTest::addColumn<QString>("text");
         QTest::addColumn<int>("cursorPosition");
         QTest::addColumn<int>("bracketPosition");
@@ -69,7 +75,8 @@ private slots:
         QTest::newRow("combining-mark") << QString::fromUtf8("(́)") << 0 << 0 << 2;
     }
 
-    void matching() {
+    void matching()
+    {
         QFETCH(QString, text);
         QFETCH(int, cursorPosition);
         QFETCH(int, bracketPosition);
@@ -98,12 +105,14 @@ private slots:
         QTRY_COMPARE(highlightedPositions(editor), expected);
         for (const auto &selection : editor.extraSelections()) {
             QCOMPARE(selection.cursor.selectionEnd() - selection.cursor.selectionStart(), 1);
-            QCOMPARE(selection.format.background().color(),
-                     QColor(partnerPosition < 0 ? "#ffb4a9" : "#a9d9bb"));
+            QCOMPARE(
+                selection.format.background().color(),
+                QColor(partnerPosition < 0 ? "#ffb4a9" : "#a9d9bb"));
         }
     }
 
-    void incrementalMetadata() {
+    void incrementalMetadata()
+    {
         QTextDocument document;
         document.documentLayout();
         document.setPlainText("(\nplain text\n[]\n)");
@@ -146,7 +155,8 @@ private slots:
         QVERIFY(squareData->brackets.isEmpty());
     }
 
-    void cursorMovesAndDocumentReplacement() {
+    void cursorMovesAndDocumentReplacement()
+    {
         EvaluatorRegistry registry;
         Editor editor(registry);
         editor.setPlainText("( abc )");
@@ -167,7 +177,8 @@ private slots:
         QTRY_VERIFY(editor.extraSelections().isEmpty());
     }
 
-    void partnerEditsWithoutCursorMovement() {
+    void partnerEditsWithoutCursorMovement()
+    {
         EvaluatorRegistry registry;
         Editor editor(registry);
         editor.setPlainText("(\n[1]\n)");
@@ -198,7 +209,8 @@ private slots:
         QTRY_COMPARE(highlightedPositions(editor), QVector<int>({0, 6}));
     }
 
-    void splitMergeAndUndoDeletedBlocks() {
+    void splitMergeAndUndoDeletedBlocks()
+    {
         EvaluatorRegistry registry;
         Editor editor(registry);
         editor.setPlainText("([])");
@@ -240,7 +252,8 @@ private slots:
         QTRY_COMPARE(highlightedPositions(editor), QVector<int>({0}));
     }
 
-    void largeDocumentAndDeepNesting() {
+    void largeDocumentAndDeepNesting()
+    {
         QTextDocument document;
         document.documentLayout();
         const QString text = "(\n" + QString("plain text\n").repeated(10000) + ")";

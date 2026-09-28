@@ -6,17 +6,20 @@
 
 class QTextCursor;
 
-struct BracketInfo {
+struct BracketInfo
+{
     QChar character;
     int position; // UTF-16 offset relative to the block, as used by QTextCursor.
 };
 
-class BracketBlockData : public QTextBlockUserData {
+class BracketBlockData : public QTextBlockUserData
+{
 public:
     QVector<BracketInfo> brackets;
 };
 
-class BracketHighlighter : public QSyntaxHighlighter {
+class BracketHighlighter : public QSyntaxHighlighter
+{
 public:
     explicit BracketHighlighter(QTextDocument *document);
 
@@ -24,7 +27,8 @@ protected:
     void highlightBlock(const QString &text) override;
 };
 
-struct BracketMatch {
+struct BracketMatch
+{
     int position = -1; // Absolute document positions; -1 means absent.
     int partner = -1;
 };

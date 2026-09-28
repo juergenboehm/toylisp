@@ -1,11 +1,12 @@
 #include "brackets.h"
 
+#include <algorithm>
 #include <QTextCursor>
 #include <QVarLengthArray>
-#include <algorithm>
 
 namespace {
-QChar pairedBracket(QChar character) {
+QChar pairedBracket(QChar character)
+{
     switch (character.unicode()) {
     case '(':
         return ')';
@@ -24,15 +25,18 @@ QChar pairedBracket(QChar character) {
     }
 }
 
-bool isOpeningBracket(QChar character) {
+bool isOpeningBracket(QChar character)
+{
     return character == '(' || character == '[' || character == '{';
 }
 
-const BracketBlockData *bracketData(const QTextBlock &block) {
+const BracketBlockData *bracketData(const QTextBlock &block)
+{
     return static_cast<const BracketBlockData *>(block.userData());
 }
 
-int matchingBracket(QTextBlock block, int index) {
+int matchingBracket(QTextBlock block, int index)
+{
     const auto *data = bracketData(block);
     const bool forward = isOpeningBracket(data->brackets.at(index).character);
     const int step = forward ? 1 : -1;
@@ -61,12 +65,15 @@ int matchingBracket(QTextBlock block, int index) {
 }
 } // namespace
 
-BracketHighlighter::BracketHighlighter(QTextDocument *document) : QSyntaxHighlighter(document) {
+BracketHighlighter::BracketHighlighter(QTextDocument *document)
+    : QSyntaxHighlighter(document)
+{
     // Qt otherwise defers the first pass when attaching to a populated document.
     rehighlight();
 }
 
-void BracketHighlighter::highlightBlock(const QString &text) {
+void BracketHighlighter::highlightBlock(const QString &text)
+{
     auto *data = static_cast<BracketBlockData *>(currentBlockUserData());
     if (data)
         data->brackets.clear();
@@ -83,7 +90,8 @@ void BracketHighlighter::highlightBlock(const QString &text) {
     }
 }
 
-BracketMatch findBracketMatch(const QTextCursor &cursor) {
+BracketMatch findBracketMatch(const QTextCursor &cursor)
+{
     const QTextBlock block = cursor.block();
     const auto *data = block.isValid() ? bracketData(block) : nullptr;
     if (!data || data->brackets.isEmpty())
@@ -92,14 +100,15 @@ BracketMatch findBracketMatch(const QTextCursor &cursor) {
     const int position = cursor.positionInBlock();
     const auto begin = data->brackets.cbegin();
     const auto end = data->brackets.cend();
-    auto bracket = std::lower_bound(
-        begin, end, position,
-        [](const BracketInfo &info, int offset) { return info.position < offset; });
+    auto bracket = std::lower_bound(begin, end, position, [](const BracketInfo &info, int offset) {
+        return info.position < offset;
+    });
     if (bracket == end || bracket->position != position) {
         if (bracket == begin || (bracket - 1)->position != position - 1)
             return {};
         --bracket;
     }
-    return {block.position() + bracket->position,
-            matchingBracket(block, static_cast<int>(bracket - begin))};
+    return {
+        block.position() + bracket->position,
+        matchingBracket(block, static_cast<int>(bracket - begin))};
 }
