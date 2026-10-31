@@ -6,7 +6,7 @@ but a Windows build has not yet been verified.
 
 ## Current capabilities
 
-- File and Edit menus; bundled New, Open and Save toolbar icons.
+- File, Edit and View menus; bundled New, Open and Save toolbar icons.
 - Movable, closable editor tabs, a narrow right-hand tools placeholder, and a
   full-width bottom Output tab. Both boundaries can be resized with splitters.
 - UTF-8 text files, Save As, modified indicators and save/discard/cancel prompts.
@@ -14,6 +14,11 @@ but a Windows build has not yet been verified.
   CRLF files retain CRLF when saved; new files use LF. Mixed endings are normalized.
 - Qt's Fusion widget style, with Segoe UI requested at 9 points for the application
   and Courier New at 10 points for editors. Qt substitutes an available font if needed.
+- Per-tab text zoom with Ctrl+mouse wheel: 5% per notch, with fractional sizes for
+  fine wheel and touchpad input, limited to 1–96 points. View → Normal Size (Ctrl+0)
+  restores 10 points in the current editor. Tabs start at normal size; zoom is not
+  saved with files or retained after closing a tab. Tab stops remain four spaces
+  wide. Zoom preserves text, selections, modified state and undo/redo history.
 - Text editors with undo/redo, clipboard operations, select all and
   case-sensitive find/replace (including Replace All).
 - Matching `()`, `[]` and `{}` highlighting at or immediately before the cursor.
@@ -23,10 +28,14 @@ but a Windows build has not yet been verified.
   metadata without copying or scanning the document text. Highlight updates are
   coalesced until the next event-loop turn, after edited blocks have been updated.
 - Arithmetic evaluation with a shared session across all editor tabs.
+- Asynchronous Sanskrit lookup through Cologne C-SALT, with Devanagari input,
+  German/English results and lookup of inflected forms through a separate
+  Cologne service. Each meaning starts with its matched headword/base form.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
-Macaulay2 evaluators, configurable fonts, and additional helper views are planned,
-not implemented. Lisp is intended to become the primary default evaluator later.
+Macaulay2 evaluators, configurable font families/default sizes, and additional
+helper views are planned, not implemented. Lisp is intended to become the primary
+default evaluator later.
 The separate Lisp500 command-line interpreter described below is implemented;
 it is not yet connected to the editor's evaluator registry.
 
@@ -56,6 +65,7 @@ x * (x + 1)
 starts with `==` in column one. Bare `==` uses the global default selected in
 the toolbar. `==arith` explicitly selects arithmetic; unknown evaluator names
 produce an error, so `==lisp` is reserved but is not executable yet.
+`==sanskrit` explicitly selects the Sanskrit lookup.
 
 Return without modifiers at the end of an evaluation line evaluates all text
 between the nearest preceding `>>` and that line, excluding the markers.
@@ -77,6 +87,91 @@ the document only; it does not roll back evaluator variables.
 
 Errors appear in the result block and in the Output tab. The Output tab keeps
 up to 2,000 lines of diagnostic text. Successful results appear in the document.
+
+## Sanskrit lookup
+
+Enter one Devanagari word and press Return at the end of `==sanskrit`:
+
+```text
+>>
+गच्छति
+==sanskrit
+```
+
+Choose **Sanskrit → Result Language → German (Petersburg)** or **English
+(Monier-Williams)**. This global setting applies to every tab and is saved in
+Qt's application settings; German is the initial choice. It selects C-SALT's
+PWG or MW dictionary, whose contents and sense divisions differ. The toolbar's
+**Sanskrit Lookup** default also allows bare `==`; the startup default remains
+Arithmetic.
+
+Devanagari is converted to SLP1 internally. The evaluator searches the entered
+word and asks Cologne's MW Inflected Forms service for possible base forms and
+verbal roots. Each distinct candidate is searched in the selected dictionary.
+Thus `रामेण` can lead to `राम`, `गच्छति` to `गम्`, and `भवति` to `भू` as well
+as nominal analyses. Direct matches do not suppress morphological alternatives.
+For `कुटुम्बकम्`, Cologne returns `कुटुम्बक`, not `कुटुम्ब`. The MW adapter
+also searches `re_headwords_slp1` when a main-headword search is empty, then reads
+only the exact matching TEI subentry. PWG's leading, unnumbered `dass.` definitions
+inherit the preceding source record: its number is searched in `xml`, and the
+response must contain that exact `tail/L` number. Inherited meanings explicitly
+name the source headword, e.g. `कुटुम्बक — wie कुटुम्ब: Hausstand, …`.
+Each extracted meaning occupies one line, prefixed by the matched headword,
+for example `गम् — gehen, sich bewegen; …`. Input stays unchanged; results use
+the dictionary's wording without automatic translation or a language model.
+
+Input accepts one word of at most 128 Unicode code units, with standard Sanskrit
+letters, vowel signs, virama, anusvara, visarga, chandrabindu and avagraha.
+Whitespace around the word is ignored. Vedic accent input, nukta letters, OM,
+multiword input, compound splitting and sentence-level sandhi are unsupported.
+For example, `वसुधैव` combines `वसुधा` and `एव`; look up those components
+separately. Preserve vowel length and a final virama: `दूरतस्` has the PWG
+meaning “aus der Ferne her”, while `दूरतस` includes a final vowel and is a
+different lookup. Likewise, `भु` and the root `भू` are distinct inputs.
+Use a system Devanagari keyboard/IME or paste text; font fallback needs a suitable
+font such as Noto Sans Devanagari. Morphology coverage depends on Cologne's tables;
+an unmatched form does not establish that a Sanskrit word is invalid.
+
+The editor stays usable while requests run; the status bar shows their count.
+Existing output remains until the finished result replaces it in one undo step.
+Changes to the input, marker or existing output cancel the affected request;
+unrelated edits may proceed. Re-evaluation supersedes the old request for that
+block, and closing a tab cancels its requests. **Sanskrit → Cancel Pending
+Evaluations in This Tab** (Escape) also cancels them. Delayed completion does not
+move the cursor to the result. Running requests retain their original language.
+
+No matches, network errors and malformed responses are distinguished. On partial
+failure usable meanings remain, accompanied by an explicit incomplete-lookup
+diagnostic. If morphology identifies a base form but the dictionary has no usable
+meaning, the result names the recognized base form instead of reporting that no
+base form was found. Requests have a 20-second timeout and 4 MiB response limit.
+More than 16 derived candidates or a full 20-entry response reports a limit rather
+than silently truncating results. PWG predecessor references are limited to four hops
+per chain and 16 reference requests per evaluation; failures retain other meanings.
+Opening and saving files never initiate requests.
+
+Providers: [C-SALT](https://cceh.github.io/c-salt_sanskrit_data/) serves JSON at
+`https://api.c-salt.uni-koeln.de/dicts/{pwg,mw}/restful/entries`;
+[MW Inflected Forms](https://www.sanskrit-lexicon.uni-koeln.de/scans/csl-inflect/web/index.php)
+uses a separate `getWord.php` endpoint returning HTML summary links.
+The adapter reads those URLs without executing HTML or JavaScript.
+The C-SALT REST/GraphQL search itself is not a general lemmatizer; morphology
+comes from the separate, table-based
+[csl-inflect project](https://github.com/sanskrit-lexicon/csl-inflect).
+Finding a stem there does not guarantee a standalone C-SALT dictionary entry.
+
+Dictionary adapters read the TEI-XML body instead of trusting MW's incomplete
+flat `sense` array. PWG extracts leading italic glosses in the first numbered
+meaning group; MW extracts leading sense text and skips paradigms where the TEI
+marks an infinitive gloss. Examples, citations, embedded run-on entries and later
+PWG derivations are omitted conservatively; a targeted MW subentry lookup reads
+only that subentry's senses. This is an abbreviated lookup;
+unusual markup may need adapter updates. No cross-request cache, authentication
+or additional API providers are implemented yet.
+PWG sub-senses whose initial label is encoded separately are supported, including
+`वसुधा` → “die Erde; Land, Reich”. If a homonymous entry is unsupported or
+malformed, usable meanings from the other entries remain visible with an
+incomplete-lookup diagnostic; the unsupported entry does not discard them.
 
 ## Arithmetic session
 
@@ -100,27 +195,80 @@ will have separate environments, with overrides using the same shared session.
 
 ## Build and run
 
-Requirements: CMake 3.16+, a C++17 compiler, Qt 5.12+ with Widgets, and Qt Test
+Requirements: CMake 3.16+, a C++17 compiler, Qt 5.12+ with Widgets/Network, and Qt Test
 when tests are enabled. Verified development toolchain: CMake 3.28.3, GCC 13.3,
-Qt 5.15.2 on Linux. Qt's SVG image plugin is needed for the bundled toolbar icons
-and is included in the local Qt installation.
+Qt 5.15.2 and Qt 5.15.13 on Linux. HTTPS also requires a TLS runtime compatible
+with the Qt build and a working certificate store. Qt's SVG image plugin is
+needed for toolbar icons.
 
 On the current development machine:
 
 ```bash
 cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH=/home/juergen/Qt/5.15.2/gcc_64 \
+  -DCMAKE_PREFIX_PATH=/home/juergen/Qt/Qt5.15.13 \
   -DCMAKE_BUILD_TYPE=Debug \
   -DBUILD_TESTING=ON
 cmake --build build
 ./build/toylisp
 ```
 
+The current machine's kit is built from the official Qt 5.15.13 sources and
+installed under `/home/juergen/Qt/Qt5.15.13`. Its Qt libraries and plugins are
+independent of Ubuntu's Qt installation. It includes the desktop modules, SVG,
+QML/Quick, Designer/Linguist, Wayland and Multimedia, with shared release
+libraries and separate debug information. Non-Qt runtime dependencies such as
+OpenSSL 3 remain system libraries. No system packages were installed.
+
+Sources, build directories and locally unpacked non-Qt development dependencies
+live under `/home/juergen/Qt/Sources/Qt5.15.13`, `Builds/Qt5.15.13` and
+`BuildDependencies/Qt5.15.13`, respectively. Build recipes, source checksums and
+Linux compatibility patches are retained there; the kit's `README.md` documents
+its configuration and rebuild commands. For command-line development:
+
+```bash
+source /home/juergen/Qt/Qt5.15.13/activate.sh
+```
+
+The workstation's `.bashrc` now sources this script in new interactive terminals;
+its previous version was backed up before replacing the old Qt PATH entry.
+WebEngine is excluded from this desktop kit.
+
+The older `/home/juergen/Qt/5.15.2/gcc_64` kit is retained, but expects OpenSSL 1.1
+and cannot perform HTTPS with this machine's OpenSSL 3. Never disable certificate
+checks to work around a TLS mismatch.
 On another machine, point `CMAKE_PREFIX_PATH` to its Qt5 installation, or omit
 it if Qt is already discoverable by CMake. No qmake invocation is required.
 For a multi-configuration generator, use `--config Debug` when building and
 `-C Debug` when running CTest. Windows requires a matching compiler/Qt kit and
 Qt runtime deployment (for example with that kit's `windeployqt`).
+
+## CLion and Qt selection
+
+Each CMake build directory has its own cached Qt selection. The local
+`cmake-build-debug` build has also been configured and rebuilt against Qt 5.15.13.
+The local Debug profile and Qt tool/QML paths have been updated in `.idea`.
+For other profiles or projects, open **Settings → Build,
+Execution, Deployment → CMake**, select **Debug**, and add this to **CMake options**:
+
+```text
+-DCMAKE_PREFIX_PATH=/home/juergen/Qt/Qt5.15.13
+```
+
+Use **Tools → CMake → Reset Cache and Reload Project** after changing Qt kits,
+then build and run the `toylisp` target with the Debug profile. Updating the
+prefix alone can leave old `Qt5*_DIR` cache entries pointing at Qt 5.15.2. From
+the command line, retain other settings while clearing just those entries with:
+
+```bash
+cmake -S . -B cmake-build-debug -U 'Qt5*' \
+  -DCMAKE_PREFIX_PATH=/home/juergen/Qt/Qt5.15.13
+cmake --build cmake-build-debug
+```
+
+Keep compilation, linking and runtime Qt libraries from the same kit. The private
+Qt kit lives outside the project, so cleaning either ToyLisp build directory
+leaves it available for this and other projects. See
+[CLion CMake profiles](https://www.jetbrains.com/help/clion/cmake-profile.html).
 
 ## Tests
 
@@ -130,9 +278,27 @@ ctest --test-dir build --output-on-failure
 
 CTest sets `QT_QPA_PLATFORM=offscreen`, so tests need no display server. Tests
 cover arithmetic, malformed input, transactional variables, shared sessions,
-block boundaries, replacement and undo/redo, bracket matching, file round trips,
-write failures, save/discard/cancel prompts and window construction. The window test writes
+block boundaries, replacement and undo/redo, bracket matching, per-tab text zoom,
+fine wheel/touchpad deltas, zoom limits, normal scrolling and the Ctrl+0 reset,
+file round trips, write failures, save/discard/cancel prompts and window
+construction. The window test writes
 `build/toylisp-screenshot.png` when run through CTest.
+
+`toylisp_lookup_tests` covers transliteration, recorded MW/PWG and morphology
+responses, malformed data, local HTTP requests, timeouts/limits, partial failure,
+PWG inline sub-sense labels, mixed supported/unsupported homonyms, exact final
+virama spelling and the reported `दूरतस्`, `वसुधा` and `एव` examples,
+`कुटुम्बकम्` morphology, exact MW subentry selection, verified PWG predecessor
+references, bounded reference chains and cancellation during reference lookup,
+cancellation, language snapshots, saved preferences, delayed replacement,
+unrelated edits, superseded requests, editor lifetime and undo/redo. It writes
+`build/toylisp-sanskrit-screenshot.png` from an offline example. Normal CTest runs
+never contact Cologne. An explicit live probe checks both languages, including
+`कुटुम्बकम्` through both dictionary adapters:
+
+```bash
+QT_QPA_PLATFORM=offscreen TOYLISP_LIVE_LOOKUP=1 ./build/toylisp_lookup_tests liveCologne
+```
 
 The separate evaluation block tests cover exact marker boundaries, missing markers,
 empty lines, Unicode positions and normalization, large surrounding documents,
@@ -158,12 +324,14 @@ bracket entries; missing or distant partners can require a document-wide search.
 
 For manual acceptance, launch the application, resize both splitters, create
 and close tabs, try save/discard/cancel, use the File dialogs, and verify
-find/replace and keyboard shortcuts. Evaluate a variable assignment in one tab
-and use it in another, edit the input, reevaluate, undo, save and reopen.
+find/replace and keyboard shortcuts. Try Ctrl+mouse wheel in different editor tabs,
+check the four-space tab stops, and reset via View → Normal Size and Ctrl+0.
+Evaluate a variable assignment in one tab and use it in another, edit the input,
+reevaluate, undo, save and reopen.
 Native file dialogs and Windows behavior require platform-specific manual checks.
-In the Codex filesystem sandbox, Qt 5.15.2 atomic saves can fail despite writable
-paths; the file tests were verified outside that sandbox. Do not disable atomic
-saving to work around this environment restriction.
+The Codex sandbox can block atomic saves/settings and local TCP test servers
+despite writable paths; the complete suite was verified outside the sandbox.
+Do not disable atomic saving to work around this restriction.
 
 ## Standalone Lisp500 interpreter
 
@@ -255,6 +423,8 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 
 - `src/app/`: startup; the main window owns the application's evaluator registry.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
+- `src/lookups/`: reusable asynchronous HTTP client, Sanskrit transliteration,
+  provider adapters and Sanskrit evaluator (Qt Core + Network).
 - `src/editor/`: widget-independent block recognition, bracket metadata highlighter
   and matching. This QtGui-based code is compiled into `toylisp_ui`;
   `toylisp_core` contains only the QtCore-based evaluators.

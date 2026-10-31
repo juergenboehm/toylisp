@@ -1,0 +1,56 @@
+{
+  "data": {
+    "entries": [
+      {
+        "created": "2026-07-07T17:55:03.129299",
+        "xml": "<entry xmlns=\"http://www.tei-c.org/ns/1.0\" xml:id=\"lemma-BU-1\" n=\"1\" ana=\"H1\"><form><idno ana=\"hc3\">500</idno><orth ana=\"key1\" xml:lang=\"san-Latn-x-SLP1\">BU</orth><idno ana=\"hc1\">1</idno><hyph ana=\"key2\" xml:lang=\"san-Latn-x-SLP1-headword\">BU</hyph><milestone unit=\"hom\" n=\"1\" /></form><sense><gramGrp><subc ana=\"vlex\" value=\"root\" /></gramGrp><gramGrp><subc ana=\"vlex\">cl.1 P.</subc></gramGrp><pc ana=\"p\" unit=\"round-bracket-left\">(</pc><cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-Dha1tup_\">Dha1tup.</ref> i, 1</bibl></cit><pc ana=\"p\" unit=\"round-bracket-right\">)</pc><w xml:lang=\"san-Latn-x-SLP1\">B/avati</w><pc ana=\"p\" unit=\"round-bracket-left\">(</pc>rarely  <gramGrp><subc ana=\"vlex\">A1.</subc></gramGrp> <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />te</w> ;  <abbr><ref target=\"#abbr-pf_\">pf.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">baB/Uva</w>, 2.  <abbr><ref target=\"#abbr-pers_\">pers.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />/UTa</w> or <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />UviTa</w> <abbr><ref target=\"#abbr-cf_\">cf.</ref></abbr> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-Pa1n2_\">Pa1n2.</ref> 7-2, 64</bibl></cit> ; <w xml:lang=\"san-Latn-x-SLP1\">baBUyAs</w>,<w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />y/Ar</w>,<w xml:lang=\"san-Latn-x-SLP1\">baBUtu</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-RV_\">RV.</ref></bibl></cit> ;  <gramGrp><subc ana=\"vlex\">A1.</subc></gramGrp> <w xml:lang=\"san-Latn-x-SLP1\">baBUve</w> or <w xml:lang=\"san-Latn-x-SLP1\">buBUve</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-Vop_\">Vop.</ref></bibl></cit> ; <abbr><ref target=\"#abbr-cf_\">cf.</ref></abbr> below ;  <abbr><ref target=\"#abbr-aor_\">aor.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">/aBUt</w>, <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />Uvan</w> ;  <abbr><ref target=\"#abbr-Impv_\">Impv.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">boD/i</w> <pc ana=\"b\" unit=\"square-bracket-left\">[</pc><abbr><ref target=\"#abbr-cf_\">cf.</ref></abbr> <milestone unit=\"following_verb_root\" /> <w xml:lang=\"san-Latn-x-SLP1\">buD</w><pc ana=\"b\" unit=\"square-bracket-right\">]</pc>, <w xml:lang=\"san-Latn-x-SLP1\">BUtu</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-RV_\">RV.</ref></bibl></cit> ;  <abbr><ref target=\"#abbr-aor_\">aor.</ref></abbr> or  <abbr><ref target=\"#abbr-impf_\">impf.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">/aBuvat</w>, <w xml:lang=\"san-Latn-x-SLP1\">B/uvat</w>, <w xml:lang=\"san-Latn-x-SLP1\">BuvAni</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-ib_\">ib.</ref></bibl></cit> ;  <abbr><ref target=\"#abbr-Prec_\">Prec.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">BUyAsam</w>, 2. 3.  <abbr><ref target=\"#abbr-sg_\">sg.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />yAs</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-ib_\">ib.</ref></bibl></cit> <ref target=\"#page-0760\" type=\"facs\">Page760,2</ref> ; <w xml:lang=\"san-Latn-x-SLP1\">BUyAt</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-AV_\">AV.</ref></bibl></cit> ; <w xml:lang=\"san-Latn-x-SLP1\">BUyizWAs</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-BhP_\">BhP.</ref></bibl></cit> ; <w xml:lang=\"san-Latn-x-SLP1\">BavizAt</w> <pc ana=\"b\" unit=\"square-bracket-left\">[</pc>?<pc ana=\"b\" unit=\"square-bracket-right\">]</pc> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-AitBr_\">AitBr.</ref></bibl></cit> ; <w xml:lang=\"san-Latn-x-SLP1\">aBavizwa</w>,<w xml:lang=\"san-Latn-x-SLP1\">BavizIzta</w>.  <abbr><ref target=\"#abbr-Gr_\">Gr.</ref></abbr> ;  <abbr><ref target=\"#abbr-fut_\">fut.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">Bavizy/ati</w>, <abbr><ref target=\"#abbr-ep_\">ep.</ref></abbr> also <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />te</w> and 2.  <abbr><ref target=\"#abbr-pl_\">pl.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />zyaDvam</w> ; <w xml:lang=\"san-Latn-x-SLP1\">BavitA</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-Br_\">Br.</ref></bibl></cit> <abbr ana=\"etc\">&amp;c</abbr> ;  <abbr><ref target=\"#abbr-inf_\">inf.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">Buv/e</w>, <w xml:lang=\"san-Latn-x-SLP1\">-Bv/e</w>, <w xml:lang=\"san-Latn-x-SLP1\">BUz/aRi</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-RV_\">RV.</ref></bibl></cit> ; <w xml:lang=\"san-Latn-x-SLP1\">Bavitum</w>,<w xml:lang=\"san-Latn-x-SLP1\"><g ref=\"#glyph-sr\" />tos</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-Br_\">Br.</ref></bibl></cit> ;  <abbr><ref target=\"#abbr-ind_p_\">ind.p.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">BUtv/A</w> ; <w xml:lang=\"san-Latn-x-SLP1\">BUtv/I</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-RV_\">RV.</ref></bibl></cit> ; <w xml:lang=\"san-Latn-x-SLP1\">-B/Uya</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-RV_\">RV.</ref></bibl></cit> <abbr ana=\"etc\">&amp;c</abbr> ; <w xml:lang=\"san-Latn-x-SLP1\">-B/Uyam</w>,<w xml:lang=\"san-Latn-x-SLP1\">-B/avam</w> <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-Br_\">Br.</ref></bibl></cit><pc ana=\"p\" unit=\"round-bracket-right\">)</pc>, <milestone unit=\"following_word_part_of_inf\" ana=\"to\" />to become, be <pc ana=\"p\" unit=\"round-bracket-left\">(</pc>with nom, or  <abbr><ref target=\"#abbr-adv_\">adv.</ref></abbr> or indeclineable words ending in <w xml:lang=\"san-Latn-x-SLP1\">I</w> or <w xml:lang=\"san-Latn-x-SLP1\">U</w> <abbr><ref target=\"#abbr-cf_\">cf.</ref></abbr> <w xml:lang=\"san-Latn-x-SLP1\">kfzRI-<milestone unit=\"following_verb_root\" />BU</w> <abbr ana=\"etc\">&amp;c</abbr><pc ana=\"p\" unit=\"round-bracket-right\">)</pc> , arise, come into being, exist, be found, live, stay, abide, happen, occur <cit type=\"literary_source\"><bibl xml:lang=\"san-Latn-x-CSDL\"><ref target=\"#auth-RV_\">RV.</ref></bibl></cit> </sense></entry>",
+        "headword_slp1": "BU",
+        "re_headwords_slp1": [
+          "Bava",
+          "Bavat",
+          "Bavita",
+          "BAva",
+          "BAvanIya",
+          "Buva",
+          "Buvad",
+          "Buvana",
+          "Buvanti",
+          "Buvas",
+          "Buvi",
+          "Buvis",
+          "BU",
+          "BUta",
+          "BUtAyana",
+          "BUti",
+          "BUtika",
+          "BUtIka",
+          "BUma",
+          "BUmakatftIyA",
+          "BUman",
+          "BUmanyu",
+          "BUmaya",
+          "BUmi",
+          "BUmikA",
+          "BUmI",
+          "BUmy",
+          "BUmya",
+          "BUya",
+          "BUyaH",
+          "BUyaS",
+          "BUyaSas",
+          "BUyas",
+          "BUyasvin",
+          "BUyizWa",
+          "BUyo",
+          "BUr",
+          "BUri",
+          "BUrika",
+          "BUry",
+          "BUvarI",
+          "BUzRu"
+        ],
+        "id": "lemma-BU-1"
+      }
+    ]
+  }
+}

@@ -5,17 +5,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets)
+find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets Network)
 add_library(toylisp_core src/evaluators/evaluator.cpp)
 target_include_directories(toylisp_core PUBLIC src)
 target_link_libraries(toylisp_core PUBLIC Qt5::Core)
+add_library(toylisp_lookups
+        src/lookups/httpclient.cpp
+        src/lookups/transliteration.cpp
+        src/lookups/sanskritparser.cpp
+        src/lookups/sanskritevaluator.cpp)
+target_link_libraries(toylisp_lookups PUBLIC toylisp_core Qt5::Network)
 add_library(toylisp_ui
         src/ui/editor.cpp
         src/ui/mainwindow.cpp
         src/editor/blocks.cpp
         src/editor/brackets.cpp
         resources/icons.qrc)
-target_link_libraries(toylisp_ui PUBLIC toylisp_core Qt5::Widgets)
+target_link_libraries(toylisp_ui PUBLIC toylisp_lookups Qt5::Widgets)
 add_executable(toylisp src/app/main.cpp)
 target_link_libraries(toylisp PRIVATE toylisp_ui)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -38,9 +44,12 @@ if (BUILD_TESTING)
     add_executable(toylisp_bracket_tests tests/brackettests.cpp)
     target_link_libraries(toylisp_bracket_tests PRIVATE toylisp_ui Qt5::Test)
     add_test(NAME toylisp_bracket_tests COMMAND toylisp_bracket_tests)
+    add_executable(toylisp_lookup_tests tests/lookuptests.cpp)
+    target_link_libraries(toylisp_lookup_tests PRIVATE toylisp_ui Qt5::Test)
+    add_test(NAME toylisp_lookup_tests COMMAND toylisp_lookup_tests)
     add_executable(toylisp_bracket_benchmarks tests/bracketbenchmarks.cpp)
     target_link_libraries(toylisp_bracket_benchmarks PRIVATE toylisp_ui Qt5::Test)
-    set_tests_properties(toylisp_tests toylisp_block_tests toylisp_bracket_tests
+    set_tests_properties(toylisp_tests toylisp_block_tests toylisp_bracket_tests toylisp_lookup_tests
             PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     if (TARGET lisp500)
         add_executable(lisp500_tests tests/lisp500tests.c)

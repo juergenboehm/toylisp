@@ -1,23 +1,128 @@
 #include "editor.h"
 #include "editor/blocks.h"
 #include "editor/brackets.h"
+#include <cmath>
 #include <QFile>
-#include <QFontDatabase>
+#include <QFontMetricsF>
 #include <QKeyEvent>
+#include <QPointer>
 #include <QSaveFile>
+#include <QSignalBlocker>
 #include <QTextBlock>
 #include <QTextCodec>
 #include <QTimer>
+#include <QWheelEvent>
+
+namespace {
+constexpr qreal normalTextPointSize = 10.0;
+
+QString outputText(QTextDocument *document, const EvaluationBlock &block)
+{
+    QTextCursor cursor(document);
+    cursor.setPosition(block.insertion);
+    cursor.setPosition(block.replacementEnd, QTextCursor::KeepAnchor);
+    return cursor.selectedText();
+}
+} // namespace
+
+struct Editor::PendingEvaluation
+{
+    QPointer<EvaluationJob> job;
+    QTextCursor marker;
+    QString input;
+    QString evaluator;
+    QString markerText;
+    QString output;
+};
+
 Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     : QPlainTextEdit(parent)
     , registry(registry)
 {
-    setFont(QFont("Courier New", 10));
+    setFont(QFont("Courier New"));
+    resetTextSize();
     setLineWrapMode(QPlainTextEdit::NoWrap);
-    setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
     new BracketHighlighter(document());
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &Editor::scheduleBracketHighlight);
     connect(this, &QPlainTextEdit::textChanged, this, &Editor::scheduleBracketHighlight);
+    connect(this, &QPlainTextEdit::textChanged, this, &Editor::discardChangedEvaluations);
+}
+
+Editor::~Editor()
+{
+    const QSignalBlocker blocker(this);
+    cancelEvaluations();
+}
+
+void Editor::cancelEvaluations()
+{
+    const auto pending = pendingEvaluations;
+    pendingEvaluations.clear();
+    for (const auto &evaluation : pending) {
+        if (evaluation->job) {
+            evaluation->job->cancel();
+            evaluation->job->deleteLater();
+        }
+    }
+    if (!pending.isEmpty())
+        emit evaluationActivityChanged();
+}
+
+bool Editor::evaluationIsCurrent(const PendingEvaluation &pending) const
+{
+    const auto markerBlock = pending.marker.block();
+    if (markerBlock.text() != pending.markerText)
+        return false;
+    const auto block = locateBlock(markerBlock);
+    return block.valid && block.input == pending.input && block.evaluator == pending.evaluator
+           && outputText(document(), block) == pending.output;
+}
+
+void Editor::discardChangedEvaluations()
+{
+    if (evaluationOutputChanging)
+        return;
+    const auto pending = pendingEvaluations;
+    bool changed = false;
+    for (const auto &evaluation : pending) {
+        if (!evaluationIsCurrent(*evaluation)) {
+            pendingEvaluations.removeOne(evaluation);
+            if (evaluation->job) {
+                evaluation->job->cancel();
+                evaluation->job->deleteLater();
+            }
+            changed = true;
+        }
+    }
+    if (changed)
+        emit evaluationActivityChanged();
+}
+
+void Editor::completeEvaluation(const std::shared_ptr<PendingEvaluation> &pending, bool immediate)
+{
+    if (!pendingEvaluations.removeOne(pending))
+        return;
+    auto *job = pending->job.data();
+    if (job && !job->isCancelled() && evaluationIsCurrent(*pending)) {
+        const auto result = job->result();
+        const auto block = locateBlock(pending->marker.block());
+        QTextCursor cursor(document());
+        evaluationOutputChanging = true;
+        cursor.beginEditBlock();
+        cursor.setPosition(block.insertion);
+        cursor.setPosition(block.replacementEnd, QTextCursor::KeepAnchor);
+        cursor.insertText("\n" + result.text + (result.text.isEmpty() ? "" : "\n") + "##");
+        cursor.endEditBlock();
+        evaluationOutputChanging = false;
+        if (immediate)
+            setTextCursor(cursor);
+        if (!result.ok)
+            emit diagnostic(result.text);
+    }
+    if (job)
+        job->deleteLater();
+    discardChangedEvaluations();
+    emit evaluationActivityChanged();
 }
 bool Editor::load(const QString &path, QString &error)
 {
@@ -79,18 +184,62 @@ void Editor::keyPressEvent(QKeyEvent *event)
             emit diagnostic(block.error);
             return;
         }
-        auto result = registry.evaluate(block.evaluator, block.input);
-        cursor.beginEditBlock();
-        cursor.setPosition(block.insertion);
-        cursor.setPosition(block.replacementEnd, QTextCursor::KeepAnchor);
-        cursor.insertText("\n" + result.text + (result.text.isEmpty() ? "" : "\n") + "##");
-        cursor.endEditBlock();
-        setTextCursor(cursor);
-        if (!result.ok)
-            emit diagnostic(result.text);
+        // Re-evaluation supersedes the previous request for this marker only.
+        const auto previous = pendingEvaluations;
+        for (const auto &pending : previous) {
+            if (pending->marker.block() == cursor.block()) {
+                pendingEvaluations.removeOne(pending);
+                if (pending->job) {
+                    pending->job->cancel();
+                    pending->job->deleteLater();
+                }
+            }
+        }
+        auto pending = std::make_shared<PendingEvaluation>();
+        pending->marker = QTextCursor(cursor.block());
+        pending->marker.setKeepPositionOnInsert(true);
+        pending->markerText = cursor.block().text();
+        pending->input = block.input;
+        pending->evaluator = block.evaluator;
+        pending->output = outputText(document(), block);
+        pending->job = registry.startEvaluation(block.evaluator, block.input, this);
+        pendingEvaluations.append(pending);
+        connect(pending->job, &EvaluationJob::completed, this, [this, pending] {
+            completeEvaluation(pending, false);
+        });
+        if (pending->job->isFinished())
+            completeEvaluation(pending, true);
+        else
+            emit evaluationActivityChanged();
         return;
     }
     QPlainTextEdit::keyPressEvent(event);
+}
+void Editor::wheelEvent(QWheelEvent *event)
+{
+    if (event->modifiers() != Qt::ControlModifier) {
+        QPlainTextEdit::wheelEvent(event);
+        return;
+    }
+
+    // Keep fractional wheel steps. Pixel-only touchpads use 40 pixels per zoom step.
+    qreal steps = event->angleDelta().y() / 120.0;
+    if (steps == 0.0)
+        steps = event->pixelDelta().y() / 40.0;
+    if (steps != 0.0)
+        setTextPointSize(font().pointSizeF() * std::pow(1.05, steps));
+    event->accept();
+}
+void Editor::resetTextSize()
+{
+    setTextPointSize(normalTextPointSize);
+}
+void Editor::setTextPointSize(qreal pointSize)
+{
+    auto editorFont = font();
+    editorFont.setPointSizeF(qBound(1.0, pointSize, 96.0));
+    setFont(editorFont);
+    setTabStopDistance(QFontMetricsF(editorFont).horizontalAdvance(' ') * 4);
 }
 void Editor::scheduleBracketHighlight()
 {

@@ -4,6 +4,7 @@
 class Editor;
 class QTabWidget;
 class QPlainTextEdit;
+class QLabel;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -17,6 +18,7 @@ private:
     EvaluatorRegistry registry;
     QTabWidget *editors;
     QPlainTextEdit *output;
+    QLabel *lookupStatus;
     int untitledCount = 0;
     Editor *currentEditor() const;
     Editor *addEditor();
@@ -26,4 +28,5 @@ private:
     void closeTab(int index);
     void updateTitle(Editor *editor);
     void findReplace();
+    void updateEvaluationActivity();
 };

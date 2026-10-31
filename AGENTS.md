@@ -4,7 +4,8 @@
 
 ToyLisp is a C++17 / Qt5 Widgets desktop application built with CMake. Linux is
 its initial target; Windows compatibility is intended but unverified. Arithmetic
-is implemented. Identity, Lisp and Macaulay2 remain planned capabilities.
+and asynchronous Sanskrit lookup are implemented. Identity, Lisp and Macaulay2
+remain planned capabilities.
 The standalone Lisp500 CLI has a Linux LP64 port; Lisp integration into the Qt
 editor remains planned.
 
@@ -13,6 +14,8 @@ editor remains planned.
 - `src/editor/`: widget-independent QtGui block operations and a bracket highlighter
   with metadata-based matching; both are built into `toylisp_ui`.
 - `src/evaluators/`: evaluator interface, registry and arithmetic environment.
+- `src/lookups/`: reusable HTTP client, Devanagari/SLP1 conversion, Cologne
+  dictionary/inflection adapters and asynchronous Sanskrit evaluator.
 - `src/lisp500/`: unchanged `lisp500a.c` / `init500.lisp` originals and standalone
   `lisp500a64.c` / `init500_64.lisp` Linux LP64 ports.
 - `tests/`: Qt Test coverage plus Lisp500 C regressions and a native FASL fixture.
@@ -25,22 +28,49 @@ Preserve user changes already present in the working tree.
 
 ## Build, run and test
 
-Require CMake 3.16+, C++17, Qt 5.12+ Widgets and Qt Test for testing. The current
-machine has CMake 3.28.3, GCC 13.3 and Qt 5.15.2 at the prefix below.
+Require CMake 3.16+, C++17, Qt 5.12+ Widgets/Network and Qt Test for testing.
+The current machine has CMake 3.28.3 and GCC 13.3. Both build directories use
+Qt 5.15.13 built from the official source archives and installed independently
+under `/home/juergen/Qt/Qt5.15.13`, linked to system OpenSSL 3. Sources, build
+recipes, source checksums, compatibility patches and non-Qt build dependencies
+live separately under `/home/juergen/Qt/{Sources,Builds,BuildDependencies}/Qt5.15.13`.
+The kit includes the desktop modules plus SVG, QML/Quick, Designer/Linguist,
+Wayland and Multimedia; WebEngine is excluded. It has shared release libraries
+with separate debug information. The older Qt 5.15.2 kit remains available,
+but expects OpenSSL 1.1 and cannot use this machine's OpenSSL 3 for HTTPS.
 
 ```bash
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/home/juergen/Qt/5.15.2/gcc_64 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/home/juergen/Qt/Qt5.15.13 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ./build/toylisp
 ./build/lisp500
 ./build/lisp500 src/lisp500/init500_64.lisp
 git diff --check
+QT_QPA_PLATFORM=offscreen TOYLISP_LIVE_LOOKUP=1 ./build/toylisp_lookup_tests liveCologne
 ```
 
 CTest uses the offscreen Qt platform. The window test emits a screenshot in the
 build directory. Check native dialogs and desktop integration manually where a
 GUI is available. Do not claim Windows verification without a Windows build.
+CTest is offline; the explicit live probe is optional. Local TCP sockets and
+atomic settings/saves can require running the suite outside the Codex sandbox.
+The Sanskrit screenshot uses recorded dictionary excerpts. On fresh systems use
+a compatible Qt development kit; the private installation is workstation setup,
+not a bundled project dependency.
+
+CLion's `cmake-build-debug` has a separate Qt cache and now also uses Qt 5.15.13.
+Keep `-DCMAKE_PREFIX_PATH=/home/juergen/Qt/Qt5.15.13` in its
+Debug profile's CMake options. After changing kits use Reset Cache and Reload
+Project, or clear only Qt discovery entries with `cmake -S . -B cmake-build-debug
+-U 'Qt5*' -DCMAKE_PREFIX_PATH=/home/juergen/Qt/Qt5.15.13`.
+Rebuild the complete executable; changing runtime library paths alone does not
+replace the headers/libraries used to compile and link it. The private Qt kit
+stays available when ToyLisp build directories are cleaned. For command-line
+development source `/home/juergen/Qt/Qt5.15.13/activate.sh`; the workstation's
+`.bashrc` now does this for new interactive terminals. The local `.idea` Debug
+profile and Qt tool/QML paths also select this kit. Do not set a global Qt
+`LD_LIBRARY_PATH` or plugin-path override.
 
 On 64-bit Linux the CMake build enables C11 for the standalone `lisp500` target
 and its `lisp500_tests` CTest suite. Direct compilation is also supported:
@@ -88,7 +118,13 @@ incomplete Common Lisp features are outside this port's scope.
 
 The application uses Qt's Fusion widget style and requests Segoe UI at 9 points
 for the application and Courier New at 10 points for editors. Qt handles font
-substitution when needed; user-configurable fonts remain planned.
+substitution when needed. Editor text zoom uses Ctrl+mouse wheel, with 5% per notch
+and fractional sizes for fine wheel/touchpad input, limited to 1–96 points.
+View → Normal Size (Ctrl+0) restores 10 points in the current editor. Zoom belongs
+to each open tab; new/reopened tabs start at normal size and zoom is not persisted.
+Keep tab stops four spaces wide at every size. Zoom must preserve document text,
+selection, modified state and undo/redo history. Configurable font families and
+default sizes remain planned.
 
 Keep parser/evaluator logic separate from editor UI. One application-wide registry
 owns one persistent environment per evaluator; editors do not own environments.
@@ -102,6 +138,49 @@ Locate evaluation blocks by traversing `QTextBlock`s from the evaluation marker;
 do not flatten or split the entire document. Preserve plain-text normalization
 of non-breaking spaces and soft line breaks, including marker boundaries within
 a text block. Keep evaluator code in the QtCore-only `toylisp_core`.
+
+`EvaluationJob` adds completion/cancellation while arithmetic remains immediate
+and keeps its shared environment. Network evaluators live in `toylisp_lookups`
+(QtCore + QtNetwork) and are registered once at application setup. Separate HTTP
+transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
+one global, saved German PWG / English MW setting. Running jobs capture that
+language. Convert a single Devanagari word locally to SLP1; search both its exact
+form and distinct Cologne MW Inflected Forms headwords/roots. Prefix every
+meaning with its matched Devanagari headword. Sentence sandhi, compound splitting
+and Vedic accent input remain unsupported.
+
+Read TEI rather than trusting MW's incomplete flat `sense` array; PWG's schema
+differs. Extraction is conservative and abbreviated: omit unrelated run-on entries,
+examples and later derived/prefixed material. The separate morphology endpoint
+returns HTML summary links; never execute provider HTML/JS. Keep jobs scoped to
+their editor and marker. Cancel changed/superseded blocks and closed tabs;
+allow unrelated edits. Revalidate input, marker and output before insertion,
+preserve one undo step and do not move the cursor on delayed completion.
+Show loading status outside document text. Retain usable meanings on partial
+failure with a diagnostic. Distinguish no matches from transport and parsing
+errors. Keep request timeout, size and candidate limits; never silently truncate
+or disable TLS certificate checks. Test with recorded responses and a local HTTP
+server, reserving live queries for an explicit opt-in probe.
+PWG can encode an initial sub-sense as an empty label followed by sibling
+definition text; retain that definition and its following lettered sub-senses.
+Keep valid meanings from other homonyms when one entry is unsupported or
+malformed and report the partial result explicitly. Regression fixtures cover
+`दूरतस्`, `वसुधा` and `एव`. Preserve final virama and vowel length; do not silently
+correct `दूरतस` or `भु`. Sandhi such as `वसुधैव` still requires separate component
+lookups (`वसुधा`, `एव`).
+
+After an empty MW main-headword lookup, search `re_headwords_slp1` and select only
+TEI `re` elements whose own `form/orth[@ana='key1']` exactly matches the requested
+headword. Do not mix the parent's meanings or neighboring subentries into it.
+Resolve a leading, unnumbered PWG `dass.` through the preceding `tail/L` record
+number, never by stripping letters from the headword. Search `field=xml` with
+the number and `query_type=match`, then verify the exact returned record number;
+an incidental citation match is insufficient. Keep the original matched headword
+as the line prefix and name the inherited definition's source headword. Limit
+reference chains to four hops and 16 reference requests per job, retain partial
+meanings on failures and cancel these requests with the job. If morphology finds
+a base form without dictionary meanings, show the recognized form explicitly.
+Fixtures and live probes cover `कुटुम्बकम्` → `कुटुम्बक` in both languages.
 
 Bracket matching uses `QSyntaxHighlighter` and block-relative `QTextBlockUserData`.
 Keep cursor-triggered searches on cached metadata; do not materialize the document

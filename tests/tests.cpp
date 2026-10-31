@@ -2,19 +2,26 @@
 #include "evaluators/evaluator.h"
 #include "ui/editor.h"
 #include "ui/mainwindow.h"
+#include <QAction>
 #include <QFile>
+#include <QFontMetricsF>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollBar>
+#include <QSettings>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
+#include <QWheelEvent>
 #include <QtTest>
 
 class Tests : public QObject
 {
     Q_OBJECT
+    QTemporaryDir settingsDirectory;
     static void evaluate(Editor &editor, int occurrence = 0)
     {
         int position = -1;
@@ -26,7 +33,32 @@ class Tests : public QObject
         editor.setTextCursor(cursor);
         QTest::keyClick(&editor, Qt::Key_Return);
     }
+    static bool wheel(
+        Editor &editor,
+        QPoint angleDelta,
+        Qt::KeyboardModifiers modifiers = Qt::ControlModifier,
+        QPoint pixelDelta = {})
+    {
+        const auto position = editor.viewport()->rect().center();
+        QWheelEvent event(
+            position,
+            editor.viewport()->mapToGlobal(position),
+            pixelDelta,
+            angleDelta,
+            Qt::NoButton,
+            modifiers,
+            Qt::NoScrollPhase,
+            false);
+        event.setAccepted(false);
+        QApplication::sendEvent(editor.viewport(), &event);
+        return event.isAccepted();
+    }
 private slots:
+    void initTestCase()
+    {
+        QVERIFY(settingsDirectory.isValid());
+        QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, settingsDirectory.path());
+    }
     void arithmetic_data()
     {
         QTest::addColumn<QString>("input");
@@ -157,6 +189,143 @@ private slots:
         QVERIFY(second.toPlainText().endsWith("\n34\n##"));
         EvaluatorRegistry independent;
         QVERIFY(!independent.evaluate("arith", "x").ok);
+    }
+    void textZoomWheel()
+    {
+        EvaluatorRegistry registry;
+        Editor editor(registry);
+        const auto family = editor.font().family();
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QVERIFY(wheel(editor, {0, 120}));
+        QCOMPARE(editor.font().pointSizeF(), 10.5);
+        QCOMPARE(editor.font().family(), family);
+        QCOMPARE(editor.tabStopDistance(), QFontMetricsF(editor.font()).horizontalAdvance(' ') * 4);
+        QVERIFY(wheel(editor, {0, -120}));
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+
+        // Two half-notches must have the same effect as one complete notch.
+        wheel(editor, {0, 60});
+        QVERIFY(editor.font().pointSizeF() > 10.0);
+        QVERIFY(editor.font().pointSizeF() < 10.5);
+        wheel(editor, {0, 60});
+        QCOMPARE(editor.font().pointSizeF(), 10.5);
+        editor.resetTextSize();
+        wheel(editor, {}, Qt::ControlModifier, {0, 10});
+        QVERIFY(editor.font().pointSizeF() > 10.0);
+        QVERIFY(editor.font().pointSizeF() < 10.5);
+        wheel(editor, {}, Qt::ControlModifier, {0, -10});
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+
+        QVERIFY(wheel(editor, {}));
+        QVERIFY(wheel(editor, {120, 0}));
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+    }
+    void textZoomLimitsAndScrolling()
+    {
+        EvaluatorRegistry registry;
+        Editor editor(registry);
+        editor.resize(400, 200);
+        editor.setPlainText(QString("line\n").repeated(300));
+        editor.show();
+        QCoreApplication::processEvents();
+        auto *scrollBar = editor.verticalScrollBar();
+        QVERIFY(scrollBar->maximum() > 0);
+        QCOMPARE(scrollBar->value(), 0);
+        wheel(editor, {0, -120}, Qt::NoModifier);
+        QVERIFY(scrollBar->value() > 0);
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        wheel(editor, {0, 120}, Qt::ShiftModifier);
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+
+        wheel(editor, {0, 120000});
+        QCOMPARE(editor.font().pointSizeF(), 96.0);
+        wheel(editor, {0, 120});
+        QCOMPARE(editor.font().pointSizeF(), 96.0);
+        wheel(editor, {0, -120});
+        QVERIFY(editor.font().pointSizeF() < 96.0);
+        wheel(editor, {0, -120000});
+        QCOMPARE(editor.font().pointSizeF(), 1.0);
+        wheel(editor, {0, -120});
+        QCOMPARE(editor.font().pointSizeF(), 1.0);
+        wheel(editor, {0, 120});
+        QCOMPARE(editor.font().pointSizeF(), 1.05);
+        editor.resetTextSize();
+        QCOMPARE(editor.font().pointSizeF(), 10.0);
+    }
+    void textZoomPreservesEditingState()
+    {
+        EvaluatorRegistry registry;
+        Editor editor(registry);
+        editor.setPlainText("(\tvalue)\nsecond line");
+        const auto original = editor.document()->toRawText();
+        auto cursor = editor.textCursor();
+        cursor.setPosition(2);
+        cursor.setPosition(7, QTextCursor::KeepAnchor);
+        editor.setTextCursor(cursor);
+        wheel(editor, {0, 120});
+        editor.resetTextSize();
+        QCOMPARE(editor.document()->toRawText(), original);
+        QCOMPARE(editor.textCursor().position(), cursor.position());
+        QCOMPARE(editor.textCursor().anchor(), cursor.anchor());
+        QVERIFY(!editor.document()->isModified());
+        QVERIFY(!editor.document()->isUndoAvailable());
+
+        editor.insertPlainText("replacement");
+        const auto edited = editor.document()->toRawText();
+        wheel(editor, {0, 120});
+        editor.resetTextSize();
+        QCOMPARE(editor.document()->toRawText(), edited);
+        QVERIFY(editor.document()->isModified());
+        editor.undo();
+        QCOMPARE(editor.document()->toRawText(), original);
+        QVERIFY(!editor.document()->isModified());
+        wheel(editor, {0, 120});
+        QVERIFY(editor.document()->isRedoAvailable());
+        editor.redo();
+        QCOMPARE(editor.document()->toRawText(), edited);
+        QCOMPARE(editor.font().pointSizeF(), 10.5);
+    }
+    void textZoomPerTabAndResetAction()
+    {
+        MainWindow window;
+        window.show();
+        window.activateWindow();
+        auto *first = window.findChild<Editor *>();
+        QVERIFY(first);
+        auto *tabs = qobject_cast<QTabWidget *>(first->parentWidget()->parentWidget());
+        QVERIFY(tabs);
+        auto *normalSize = window.findChild<QAction *>("normalSizeAction");
+        QVERIFY(normalSize);
+        QCOMPARE(window.menuBar()->actions().at(2)->text(), QString("&View"));
+        QCOMPARE(normalSize->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_0));
+        wheel(*first, {0, 120});
+        auto *toolbar = window.findChild<QToolBar *>();
+        QVERIFY(toolbar);
+        toolbar->actions()[0]->trigger();
+        auto *second = qobject_cast<Editor *>(tabs->currentWidget());
+        QVERIFY(second && second != first);
+        QCOMPARE(second->font().pointSizeF(), 10.0);
+        wheel(*second, {0, 240});
+        const auto secondSize = second->font().pointSizeF();
+        tabs->setCurrentWidget(first);
+        QCOMPARE(first->font().pointSizeF(), 10.5);
+        normalSize->trigger();
+        QCOMPARE(first->font().pointSizeF(), 10.0);
+        QCOMPARE(second->font().pointSizeF(), secondSize);
+
+        wheel(*first, {0, 120});
+        tabs->setCurrentWidget(second);
+        second->setFocus();
+        QTRY_VERIFY(second->hasFocus());
+        QTest::keyClick(second, Qt::Key_0, Qt::ControlModifier);
+        QCOMPARE(second->font().pointSizeF(), 10.0);
+        QCOMPARE(first->font().pointSizeF(), 10.5);
+        QVERIFY(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Q_ARG(int, 1)));
+        QVERIFY(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Q_ARG(int, 0)));
+        QCOMPARE(tabs->count(), 0);
+        normalSize->trigger(); // Closing the last tab leaves the menu safe to use.
+        toolbar->actions()[0]->trigger();
+        QCOMPARE(qobject_cast<Editor *>(tabs->currentWidget())->font().pointSizeF(), 10.0);
     }
     void files()
     {

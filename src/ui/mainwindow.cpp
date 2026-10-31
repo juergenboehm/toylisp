@@ -1,6 +1,8 @@
 #include "mainwindow.h"
 #include "editor.h"
+#include "lookups/sanskritevaluator.h"
 #include <QAction>
+#include <QActionGroup>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialog>
@@ -12,6 +14,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -47,6 +50,47 @@ MainWindow::MainWindow()
     connect(editors, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
     auto *file = menuBar()->addMenu("&File");
     auto *edit = menuBar()->addMenu("&Edit");
+    auto *view = menuBar()->addMenu("&View");
+    auto *normalSize = view->addAction("&Normal Size");
+    normalSize->setObjectName("normalSizeAction");
+    normalSize->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    connect(normalSize, &QAction::triggered, this, [this] {
+        if (auto *editor = currentEditor())
+            editor->resetTextSize();
+    });
+    auto sanskrit = std::make_unique<SanskritEvaluator>();
+    auto *sanskritEvaluator = sanskrit.get();
+    registry.addEvaluator("sanskrit", std::move(sanskrit));
+    auto *sanskritMenu = menuBar()->addMenu("&Sanskrit");
+    auto *languages = sanskritMenu->addMenu("Result &Language");
+    auto *languageGroup = new QActionGroup(this);
+    const QString savedLanguage
+        = QSettings("ToyLisp", "ToyLisp").value("sanskrit/resultLanguage", "de").toString();
+    for (const auto &code : {QString("de"), QString("en")}) {
+        const bool german = code == "de";
+        auto *action = languages->addAction(
+            german ? "&German (Petersburg)" : "&English (Monier-Williams)");
+        action->setObjectName("sanskritLanguage_" + code);
+        action->setCheckable(true);
+        languageGroup->addAction(action);
+        const bool selected = code == savedLanguage || (german && savedLanguage != "en");
+        action->setChecked(selected);
+        if (selected)
+            sanskritEvaluator->setLanguage(
+                german ? SanskritLanguage::German : SanskritLanguage::English);
+        connect(action, &QAction::triggered, this, [sanskritEvaluator, code, german] {
+            sanskritEvaluator->setLanguage(
+                german ? SanskritLanguage::German : SanskritLanguage::English);
+            QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/resultLanguage", code);
+        });
+    }
+    auto *cancelLookup = sanskritMenu->addAction("&Cancel Pending Evaluations in This Tab");
+    cancelLookup->setObjectName("cancelEvaluationsAction");
+    cancelLookup->setShortcut(QKeySequence(Qt::Key_Escape));
+    connect(cancelLookup, &QAction::triggered, this, [this] {
+        if (auto *editor = currentEditor())
+            editor->cancelEvaluations();
+    });
     auto *toolbar = addToolBar("File");
     toolbar->setObjectName("fileToolbar");
     auto addFileAction = [&](QString title, QString icon, QKeySequence key, auto function) {
@@ -92,11 +136,16 @@ MainWindow::MainWindow()
     toolbar->addWidget(new QLabel(" Default evaluator: ", toolbar));
     auto *selector = new QComboBox(toolbar);
     selector->addItem("Arithmetic", "arith");
+    selector->addItem("Sanskrit Lookup", "sanskrit");
+    selector->setObjectName("evaluatorSelector");
     toolbar->addWidget(selector);
     connect(selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, selector] {
         registry.defaultName = selector->currentData().toString();
     });
     statusBar()->showMessage("Ready — enter >>, input, then == and Return to evaluate");
+    lookupStatus = new QLabel(this);
+    lookupStatus->setObjectName("lookupStatus");
+    statusBar()->addPermanentWidget(lookupStatus);
     addEditor();
 }
 Editor *MainWindow::currentEditor() const
@@ -116,8 +165,16 @@ Editor *MainWindow::addEditor()
         output->appendPlainText(editors->tabText(editors->indexOf(editor)) + ": " + message);
         statusBar()->showMessage(message, 10000);
     });
+    connect(editor, &Editor::evaluationActivityChanged, this, &MainWindow::updateEvaluationActivity);
     editor->setFocus();
     return editor;
+}
+void MainWindow::updateEvaluationActivity()
+{
+    int count = 0;
+    for (int i = 0; i < editors->count(); ++i)
+        count += qobject_cast<Editor *>(editors->widget(i))->activeEvaluationCount();
+    lookupStatus->setText(count ? QString("Pending lookups: %1").arg(count) : QString());
 }
 void MainWindow::updateTitle(Editor *editor)
 {
@@ -185,11 +242,15 @@ void MainWindow::closeTab(int index)
     auto *editor = qobject_cast<Editor *>(editors->widget(index));
     if (!editor || !confirmClose(editor))
         return;
+    editor->cancelEvaluations();
     editors->removeTab(index);
     editor->deleteLater();
 }
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    // Modal save prompts process events; no lookup may dirty a tab already checked.
+    for (int i = 0; i < editors->count(); ++i)
+        qobject_cast<Editor *>(editors->widget(i))->cancelEvaluations();
     for (int i = 0; i < editors->count(); ++i) {
         if (!confirmClose(qobject_cast<Editor *>(editors->widget(i)))) {
             event->ignore();
