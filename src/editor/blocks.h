@@ -1,6 +1,6 @@
 #pragma once
 #include <QString>
-#include <QTextBlock>
+#include <QtGui/QTextBlock>
 struct EvaluationBlock
 {
     bool valid = false;

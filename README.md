@@ -27,6 +27,8 @@ but a Windows build has not yet been verified.
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
 Macaulay2 evaluators, configurable fonts, and additional helper views are planned,
 not implemented. Lisp is intended to become the primary default evaluator later.
+The separate Lisp500 command-line interpreter described below is implemented;
+it is not yet connected to the editor's evaluator registry.
 
 ## Evaluation blocks
 
@@ -163,6 +165,92 @@ In the Codex filesystem sandbox, Qt 5.15.2 atomic saves can fail despite writabl
 paths; the file tests were verified outside that sandbox. Do not disable atomic
 saving to work around this environment restriction.
 
+## Standalone Lisp500 interpreter
+
+`src/lisp500/lisp500a.c` is the unchanged 32-bit C original. Its Linux LP64 port,
+`src/lisp500/lisp500a64.c`, uses `typedef long int lval` and keeps the original
+function and variable names without adding interpreter functions or variables.
+`src/lisp500/init500_64.lisp` ports the accompanying `init500.lisp` library;
+the original Lisp file is also preserved, with the same definitions in the port.
+The 64-bit version is separate from the Qt editor and does not enable `==lisp`.
+
+Build directly, without `-m32`:
+
+```bash
+gcc src/lisp500/lisp500a64.c -o build/lisp500 -lm -ldl
+./build/lisp500
+./build/lisp500 src/lisp500/init500_64.lisp
+```
+
+Create `build/` first if it does not already exist. The normal CMake build also
+builds `build/lisp500` on 64-bit Linux, using a C11 compiler. The interpreter reads
+forms from standard input, evaluates file arguments before entering its REPL,
+and exits at EOF. For example, `(+ 1 2)` returns `3`. The original startup symbol
+listing is retained. This port requires eight-byte `long int` and pointers;
+Windows LLP64 is unsupported by this source and is rejected at compile time.
+
+Heap and stack capacities remain 2,097,152 and 65,536 Lisp words, respectively;
+their byte sizes are now 16 MiB and 512 KiB. Allocation, clearing, copying,
+strings, doubles and raw buffers use the 64-bit layout. Strings start after two
+`lval` header words; their header is `(length + 8) << 5`. Raw bit buffers allocate
+whole 64-bit words and store that word count in the header's high bits.
+Bit-buffer headers also preserve the exact length: decode it as
+`(header >> 8) * 64 + ((header >> 3) & 31) * 2 + (header & 1) - 63`.
+`MAKEJ` with string type `20` uses the string header and reserves its terminator.
+Variadic allocator payloads must have type `lval`: use `L` suffixes for integer literals
+and explicit casts for native pointers. `GO`, `RETURN-FROM` and `THROW` transfer
+their payload through the existing GC root `xvalues`; `longjmp` carries only `1`.
+Nested `CATCH` unwinding invalidates the contained jump object correctly.
+
+Fixnums occupy the signed range from `-2^58` through `2^58 - 1`; other numbers use
+boxed doubles. Arithmetic still uses `double`, including its integer precision
+limits. `IVAL`, `JREF` and `DPB` preserve exact raw integers for bit operations:
+values outside the fixnum range retain their raw bits alongside the approximate
+double in a two-payload-word numeric box. Ordinary arithmetic doubles have one
+payload word. `LDB` and `(SETF JREF)` recognize this representation. `JREF` also
+accepts a `(word-index . shift)` index, with shift `0` or `32`, to read or write
+an unsigned 32-bit half without losing precision. The library uses those halves
+for packed characters, bit vectors and generated C constants. The port retains the
+legacy reader and evaluator behavior; it is not a new Common Lisp implementation.
+
+The ported library loads completely, initializes its reader, streams, structures,
+classes and REPL, and exits cleanly at EOF. String-stream reads and input-position
+tracking also handle EOF correctly. Original incomplete features remain, including
+string `REVERSE`, parts of the numeric reader and compiler operators.
+
+Native FASL modules must be rebuilt for the new ABI and object layout. Relocations
+use the top two bits of a 64-bit word and a 62-bit byte offset; table entries are
+eight bytes. Existing 32-bit modules/data are incompatible. Add `-rdynamic` to
+the direct GCC command when modules reference interpreter functions; the CMake
+target already exports them. The library's Lisp-to-C compiler now emits eight-byte
+offsets, exact 64-bit relocation expressions and correctly typed variadic arguments.
+Generated modules contain their runtime declarations, so the absent original
+`lisp500.h` is not needed. `fasr` supplies a vector of module objects in `f[1]`;
+compiled functions retain it in their environment, keeping literal constants
+alive across GC. `test-compilation` requires `cc` and writes `test.c` and
+`test.so` in the current directory; for example:
+
+```lisp
+(test-compilation '(setq compiled-function #'(lambda (x) (+ x 2))))
+(fasl "./test.so")
+(funcall compiled-function 40)
+```
+
+On 64-bit Linux, CTest also runs `lisp500_tests`. These tests cover evaluation,
+strings at word boundaries, complete array/buffer initialization, large numbers,
+64-bit bit operations, forward/backward/nested jumps, zero and multiple return
+values, cleanup and GC during unwinding, file streams, native FASL loading,
+relocations, and 2.2 million allocations with live objects across collections.
+They also load `init500_64.lisp`, check string and bit-vector lengths 0 through 130,
+packed reads/writes across half-word and word boundaries, arrays, string streams,
+structures, classes, hash-table growth and restarts. The real Lisp-to-C compiler,
+`cc` and native loader round-trip constants and a callable function, including
+package, symbol and class relocations, floating-point payloads and constants
+referenced only by compiled functions across GC.
+The suite has also been checked with GCC `-O2` and AddressSanitizer/UBSan. Leak
+detection was disabled for that sanitizer run because the execution environment
+uses tracing; memory access and undefined-behavior checks remained enabled.
+
 ## Layout and development
 
 - `src/app/`: startup; the main window owns the application's evaluator registry.
@@ -171,7 +259,8 @@ saving to work around this environment restriction.
   and matching. This QtGui-based code is compiled into `toylisp_ui`;
   `toylisp_core` contains only the QtCore-based evaluators.
 - `src/evaluators/`: evaluator interface, registry and arithmetic parser/session.
-- `tests/`: Qt Test regression and integration tests, plus optional bracket benchmarks.
+- `src/lisp500/`: standalone Lisp500 C/library originals and Linux LP64 ports.
+- `tests/`: Qt Test coverage, optional bracket benchmarks, and Lisp500 C tests/module.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.
 
 Use the repository's `.clang-format` for C++ changes. It was exported from CLion's
