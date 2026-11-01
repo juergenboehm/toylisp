@@ -1,7 +1,6 @@
 #pragma once
 #include <map>
 #include <memory>
-#include <QMap>
 #include <QObject>
 #include <QString>
 
@@ -35,14 +34,6 @@ public:
     virtual ~Evaluator() = default;
     virtual Evaluation evaluate(const QString &input);
     virtual EvaluationJob *startEvaluation(const QString &input, QObject *parent);
-};
-class ArithmeticEvaluator : public Evaluator
-{
-public:
-    Evaluation evaluate(const QString &input) override;
-
-private:
-    QMap<QString, double> variables;
 };
 class EvaluatorRegistry
 {

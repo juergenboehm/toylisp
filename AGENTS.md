@@ -13,11 +13,14 @@ editor remains planned.
 - `src/ui/`: main window, text editors, menus and file dialogs.
 - `src/editor/`: widget-independent QtGui block operations and a bracket highlighter
   with metadata-based matching; both are built into `toylisp_ui`.
-- `src/evaluators/`: evaluator interface, registry and arithmetic environment.
-- `src/lookups/`: reusable HTTP client, Devanagari/SLP1 conversion, Cologne
-  dictionary/inflection adapters and asynchronous Sanskrit evaluator.
-- `src/lisp500/`: unchanged `lisp500a.c` / `init500.lisp` originals and standalone
-  `lisp500a64.c` / `init500_64.lisp` Linux LP64 ports.
+- `src/evaluators/`: shared evaluator interface, result, job and registry.
+- `src/evaluators/arith/`: arithmetic parser, evaluator and persistent environment.
+- `src/evaluators/lisp500/`: unchanged `lisp500a.c` / `init500.lisp` originals and
+  standalone `lisp500a64.c` / `init500_64.lisp` Linux LP64 ports; Qt integration
+  remains planned.
+- `src/evaluators/sanskrit/`: Devanagari/SLP1 conversion, Cologne dictionary/inflection
+  adapters and asynchronous Sanskrit evaluator.
+- `src/lookups/`: reusable HTTP client (`httpclient.h` / `httpclient.cpp`).
 - `tests/`: Qt Test coverage plus Lisp500 C regressions and a native FASL fixture.
 - `resources/`: bundled toolbar SVG icons.
 - `README.md`: supported behavior, limitations, setup and commands.
@@ -45,7 +48,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ./build/toylisp
 ./build/lisp500
-./build/lisp500 src/lisp500/init500_64.lisp
+./build/lisp500 src/evaluators/lisp500/init500_64.lisp
 git diff --check
 QT_QPA_PLATFORM=offscreen TOYLISP_LIVE_LOOKUP=1 ./build/toylisp_lookup_tests liveCologne
 ```
@@ -76,7 +79,7 @@ On 64-bit Linux the CMake build enables C11 for the standalone `lisp500` target
 and its `lisp500_tests` CTest suite. Direct compilation is also supported:
 
 ```bash
-gcc src/lisp500/lisp500a64.c -o build/lisp500 -lm -ldl
+gcc src/evaluators/lisp500/lisp500a64.c -o build/lisp500 -lm -ldl
 ```
 
 Add `-rdynamic` when loading native FASL modules that call interpreter functions;
@@ -129,6 +132,9 @@ default sizes remain planned.
 Keep parser/evaluator logic separate from editor UI. One application-wide registry
 owns one persistent environment per evaluator; editors do not own environments.
 Evaluator overrides and the global default must use that same registry.
+Keep shared infrastructure directly under `src/evaluators/` and each concrete
+evaluator with its helpers under `src/evaluators/<name>/`. The registry still
+registers arithmetic automatically; moving files does not change session ownership.
 
 Markers are ordinary text. Preserve the agreed `>>`, `==`, `##` replacement
 boundaries and stop end-marker searches at the next input block. Evaluation is
@@ -137,12 +143,14 @@ replacement must be one undo operation. Document undo does not undo session stat
 Locate evaluation blocks by traversing `QTextBlock`s from the evaluation marker;
 do not flatten or split the entire document. Preserve plain-text normalization
 of non-breaking spaces and soft line breaks, including marker boundaries within
-a text block. Keep evaluator code in the QtCore-only `toylisp_core`.
+a text block. Keep shared evaluator infrastructure and arithmetic in the
+QtCore-only `toylisp_core`.
 
 `EvaluationJob` adds completion/cancellation while arithmetic remains immediate
-and keeps its shared environment. Network evaluators live in `toylisp_lookups`
-(QtCore + QtNetwork) and are registered once at application setup. Separate HTTP
-transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
+and keeps its shared environment. `toylisp_lookups` builds the reusable HTTP client
+from `src/lookups/` and Sanskrit code from `src/evaluators/sanskrit/`
+(QtCore + QtNetwork). Sanskrit is registered once at application setup. Separate
+HTTP transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
 one global, saved German PWG / English MW setting. Running jobs capture that
 language. Convert a single Devanagari word locally to SLP1; search both its exact
 form and distinct Cologne MW Inflected Forms headwords/roots. Prefix every

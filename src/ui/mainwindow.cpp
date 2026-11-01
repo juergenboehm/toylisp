@@ -1,6 +1,6 @@
 #include "mainwindow.h"
 #include "editor.h"
-#include "lookups/sanskritevaluator.h"
+#include "evaluators/sanskrit/sanskritevaluator.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>

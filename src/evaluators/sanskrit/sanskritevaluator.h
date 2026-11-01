@@ -1,6 +1,6 @@
 #pragma once
 #include "evaluators/evaluator.h"
-#include "httpclient.h"
+#include "lookups/httpclient.h"
 #include "sanskritparser.h"
 
 struct SanskritEndpoints

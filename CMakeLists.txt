@@ -6,14 +6,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets Network)
-add_library(toylisp_core src/evaluators/evaluator.cpp)
+add_library(toylisp_core
+        src/evaluators/evaluator.cpp
+        src/evaluators/arith/arithmeticevaluator.cpp)
 target_include_directories(toylisp_core PUBLIC src)
 target_link_libraries(toylisp_core PUBLIC Qt5::Core)
 add_library(toylisp_lookups
         src/lookups/httpclient.cpp
-        src/lookups/transliteration.cpp
-        src/lookups/sanskritparser.cpp
-        src/lookups/sanskritevaluator.cpp)
+        src/evaluators/sanskrit/transliteration.cpp
+        src/evaluators/sanskrit/sanskritparser.cpp
+        src/evaluators/sanskrit/sanskritevaluator.cpp)
 target_link_libraries(toylisp_lookups PUBLIC toylisp_core Qt5::Network)
 add_library(toylisp_ui
         src/ui/editor.cpp
@@ -26,7 +28,7 @@ add_executable(toylisp src/app/main.cpp)
 target_link_libraries(toylisp PRIVATE toylisp_ui)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     enable_language(C)
-    add_executable(lisp500 src/lisp500/lisp500a64.c)
+    add_executable(lisp500 src/evaluators/lisp500/lisp500a64.c)
     set_target_properties(lisp500 PROPERTIES
             C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
             AUTOMOC OFF AUTORCC OFF ENABLE_EXPORTS ON)
@@ -64,7 +66,7 @@ if (BUILD_TESTING)
         add_dependencies(lisp500_tests lisp500_test_module)
         add_test(NAME lisp500_tests
                 COMMAND lisp500_tests $<TARGET_FILE:lisp500_test_module>
-                ${CMAKE_CURRENT_SOURCE_DIR}/src/lisp500/init500_64.lisp)
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/evaluators/lisp500/init500_64.lisp)
         set_tests_properties(lisp500_tests PROPERTIES TIMEOUT 60)
     endif ()
 endif ()

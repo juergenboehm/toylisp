@@ -1,4 +1,5 @@
 #include "editor/blocks.h"
+#include "evaluators/arith/arithmeticevaluator.h"
 #include "evaluators/evaluator.h"
 #include "ui/editor.h"
 #include "ui/mainwindow.h"

@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #define main lisp500Main
-#include "../src/lisp500/lisp500a64.c"
+#include "../src/evaluators/lisp500/lisp500a64.c"
 #undef main
 
 #define CHECK(condition) do { \

@@ -1,5 +1,5 @@
-#include "lookups/sanskritevaluator.h"
-#include "lookups/transliteration.h"
+#include "evaluators/sanskrit/sanskritevaluator.h"
+#include "evaluators/sanskrit/transliteration.h"
 #include "ui/editor.h"
 #include "ui/mainwindow.h"
 #include <functional>

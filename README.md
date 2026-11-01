@@ -335,19 +335,20 @@ Do not disable atomic saving to work around this restriction.
 
 ## Standalone Lisp500 interpreter
 
-`src/lisp500/lisp500a.c` is the unchanged 32-bit C original. Its Linux LP64 port,
-`src/lisp500/lisp500a64.c`, uses `typedef long int lval` and keeps the original
-function and variable names without adding interpreter functions or variables.
-`src/lisp500/init500_64.lisp` ports the accompanying `init500.lisp` library;
+`src/evaluators/lisp500/lisp500a.c` is the unchanged 32-bit C original. Its Linux
+LP64 port, `src/evaluators/lisp500/lisp500a64.c`, uses `typedef long int lval` and
+keeps the original function and variable names without adding interpreter functions
+or variables.
+`src/evaluators/lisp500/init500_64.lisp` ports the accompanying `init500.lisp` library;
 the original Lisp file is also preserved, with the same definitions in the port.
 The 64-bit version is separate from the Qt editor and does not enable `==lisp`.
 
 Build directly, without `-m32`:
 
 ```bash
-gcc src/lisp500/lisp500a64.c -o build/lisp500 -lm -ldl
+gcc src/evaluators/lisp500/lisp500a64.c -o build/lisp500 -lm -ldl
 ./build/lisp500
-./build/lisp500 src/lisp500/init500_64.lisp
+./build/lisp500 src/evaluators/lisp500/init500_64.lisp
 ```
 
 Create `build/` first if it does not already exist. The normal CMake build also
@@ -423,13 +424,17 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 
 - `src/app/`: startup; the main window owns the application's evaluator registry.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
-- `src/lookups/`: reusable asynchronous HTTP client, Sanskrit transliteration,
-  provider adapters and Sanskrit evaluator (Qt Core + Network).
+- `src/lookups/`: reusable asynchronous HTTP client (`httpclient.h` / `httpclient.cpp`).
 - `src/editor/`: widget-independent block recognition, bracket metadata highlighter
   and matching. This QtGui-based code is compiled into `toylisp_ui`;
-  `toylisp_core` contains only the QtCore-based evaluators.
-- `src/evaluators/`: evaluator interface, registry and arithmetic parser/session.
-- `src/lisp500/`: standalone Lisp500 C/library originals and Linux LP64 ports.
+  `toylisp_core` contains the shared evaluator infrastructure and arithmetic (QtCore).
+- `src/evaluators/`: shared evaluator interface, result, job and registry.
+- `src/evaluators/arith/`: arithmetic parser, evaluator and persistent session.
+- `src/evaluators/lisp500/`: standalone Lisp500 C/library originals and Linux LP64
+  ports; Qt evaluator integration remains planned.
+- `src/evaluators/sanskrit/`: Sanskrit transliteration, provider adapters and
+  asynchronous evaluator. These and the HTTP client are built into
+  `toylisp_lookups` (QtCore + QtNetwork).
 - `tests/`: Qt Test coverage, optional bracket benchmarks, and Lisp500 C tests/module.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.
 
@@ -437,6 +442,10 @@ Use the repository's `.clang-format` for C++ changes. It was exported from CLion
 Qt preset and uses four-space indentation and a 100-column target.
 `BasedOnStyle: LLVM` supplies defaults; the explicit options implement the selected
 Qt-based style. Configure CLion to use this file when formatting C++ code.
+
+Each concrete evaluator and its helpers belong under `src/evaluators/<name>/`;
+shared infrastructure stays directly under `src/evaluators/`. The registry still
+registers arithmetic automatically and owns the shared sessions.
 
 Keep evaluator and block logic independent of widgets. See `AGENTS.md` for
 contributor instructions. README.md and AGENTS.md are updated as capabilities,
