@@ -13,10 +13,11 @@ but a Windows build has not yet been verified.
   Saves use `QSaveFile` for atomic replacement. Invalid UTF-8 is rejected.
   CRLF files retain CRLF when saved; new files use LF. Mixed endings are normalized.
 - Qt's Fusion widget style, with Segoe UI requested at 9 points for the application
-  and Courier New at 10 points for editors. Qt substitutes an available font if needed.
+  and DejaVu Sans Mono at 12 points for editors. Qt substitutes an available font
+  if needed.
 - Per-tab text zoom with Ctrl+mouse wheel: 5% per notch, with fractional sizes for
   fine wheel and touchpad input, limited to 1–96 points. View → Normal Size (Ctrl+0)
-  restores 10 points in the current editor. Tabs start at normal size; zoom is not
+  restores 12 points in the current editor. Tabs start at normal size; zoom is not
   saved with files or retained after closing a tab. Tab stops remain four spaces
   wide. Zoom preserves text, selections, modified state and undo/redo history.
 - Text editors with undo/redo, clipboard operations, select all and
@@ -31,6 +32,7 @@ but a Windows build has not yet been verified.
 - Asynchronous Sanskrit lookup through Cologne C-SALT, with Devanagari input,
   German/English results and lookup of inflected forms through a separate
   Cologne service. Each meaning starts with its matched headword/base form.
+- A development evaluator for testing Devanagari/SLP1 transliteration locally.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
 Macaulay2 evaluators, configurable font families/default sizes, and additional
@@ -65,7 +67,8 @@ x * (x + 1)
 starts with `==` in column one. Bare `==` uses the global default selected in
 the toolbar. `==arith` explicitly selects arithmetic; unknown evaluator names
 produce an error, so `==lisp` is reserved but is not executable yet.
-`==sanskrit` explicitly selects the Sanskrit lookup.
+`==sanskrit` explicitly selects the Sanskrit lookup. `==test` selects the
+development evaluator.
 
 Return without modifiers at the end of an evaluation line evaluates all text
 between the nearest preceding `>>` and that line, excluding the markers.
@@ -172,6 +175,23 @@ PWG sub-senses whose initial label is encoded separately are supported, includin
 `वसुधा` → “die Erde; Land, Reich”. If a homonymous entry is unsupported or
 malformed, usable meanings from the other entries remain visible with an
 incomplete-lookup diagnostic; the unsupported entry does not discard them.
+
+## Development evaluator
+
+The **Test** evaluator provides a place to try features during development. It
+currently accepts one Devanagari word using the same input rules as the Sanskrit
+lookup. Enter a word and press Return at the end of `==test`:
+
+```text
+>>
+गच्छति
+==test
+```
+
+The first result line is the SLP1 spelling (`gacCati`). The second line is the
+Devanagari spelling obtained by converting that SLP1 back (`गच्छति`). Both
+conversions run locally. Invalid input produces an error in the result block.
+Selecting **Test** as the default evaluator in the toolbar also allows bare `==`.
 
 ## Arithmetic session
 
@@ -435,6 +455,9 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 - `src/evaluators/sanskrit/`: Sanskrit transliteration, provider adapters and
   asynchronous evaluator. These and the HTTP client are built into
   `toylisp_lookups` (QtCore + QtNetwork).
+- `src/evaluators/test/`: development evaluator, currently for local transliteration
+  experiments. It is built into `toylisp_lookups` alongside the transliteration
+  code it uses.
 - `tests/`: Qt Test coverage, optional bracket benchmarks, and Lisp500 C tests/module.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.
 

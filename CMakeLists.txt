@@ -15,7 +15,8 @@ add_library(toylisp_lookups
         src/lookups/httpclient.cpp
         src/evaluators/sanskrit/transliteration.cpp
         src/evaluators/sanskrit/sanskritparser.cpp
-        src/evaluators/sanskrit/sanskritevaluator.cpp)
+        src/evaluators/sanskrit/sanskritevaluator.cpp
+        src/evaluators/test/testevaluator.cpp)
 target_link_libraries(toylisp_lookups PUBLIC toylisp_core Qt5::Network)
 add_library(toylisp_ui
         src/ui/editor.cpp

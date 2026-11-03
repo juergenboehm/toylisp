@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "editor.h"
 #include "evaluators/sanskrit/sanskritevaluator.h"
+#include "evaluators/test/testevaluator.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
@@ -61,6 +62,8 @@ MainWindow::MainWindow()
     auto sanskrit = std::make_unique<SanskritEvaluator>();
     auto *sanskritEvaluator = sanskrit.get();
     registry.addEvaluator("sanskrit", std::move(sanskrit));
+    registry.addEvaluator("test", std::make_unique<TestEvaluator>());
+
     auto *sanskritMenu = menuBar()->addMenu("&Sanskrit");
     auto *languages = sanskritMenu->addMenu("Result &Language");
     auto *languageGroup = new QActionGroup(this);
@@ -137,6 +140,7 @@ MainWindow::MainWindow()
     auto *selector = new QComboBox(toolbar);
     selector->addItem("Arithmetic", "arith");
     selector->addItem("Sanskrit Lookup", "sanskrit");
+    selector->addItem("Test", "test");
     selector->setObjectName("evaluatorSelector");
     toolbar->addWidget(selector);
     connect(selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, selector] {

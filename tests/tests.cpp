@@ -22,6 +22,9 @@
 class Tests : public QObject
 {
     Q_OBJECT
+    static constexpr qreal normalPointSize = 12.0;
+    static constexpr qreal oneNotchPointSize = 12.6;
+
     QTemporaryDir settingsDirectory;
     static void evaluate(Editor &editor, int occurrence = 0)
     {
@@ -196,30 +199,30 @@ private slots:
         EvaluatorRegistry registry;
         Editor editor(registry);
         const auto family = editor.font().family();
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
         QVERIFY(wheel(editor, {0, 120}));
-        QCOMPARE(editor.font().pointSizeF(), 10.5);
+        QCOMPARE(editor.font().pointSizeF(), oneNotchPointSize);
         QCOMPARE(editor.font().family(), family);
         QCOMPARE(editor.tabStopDistance(), QFontMetricsF(editor.font()).horizontalAdvance(' ') * 4);
         QVERIFY(wheel(editor, {0, -120}));
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
 
         // Two half-notches must have the same effect as one complete notch.
         wheel(editor, {0, 60});
-        QVERIFY(editor.font().pointSizeF() > 10.0);
-        QVERIFY(editor.font().pointSizeF() < 10.5);
+        QVERIFY(editor.font().pointSizeF() > normalPointSize);
+        QVERIFY(editor.font().pointSizeF() < oneNotchPointSize);
         wheel(editor, {0, 60});
-        QCOMPARE(editor.font().pointSizeF(), 10.5);
+        QCOMPARE(editor.font().pointSizeF(), oneNotchPointSize);
         editor.resetTextSize();
         wheel(editor, {}, Qt::ControlModifier, {0, 10});
-        QVERIFY(editor.font().pointSizeF() > 10.0);
-        QVERIFY(editor.font().pointSizeF() < 10.5);
+        QVERIFY(editor.font().pointSizeF() > normalPointSize);
+        QVERIFY(editor.font().pointSizeF() < oneNotchPointSize);
         wheel(editor, {}, Qt::ControlModifier, {0, -10});
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
 
         QVERIFY(wheel(editor, {}));
         QVERIFY(wheel(editor, {120, 0}));
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
     }
     void textZoomLimitsAndScrolling()
     {
@@ -234,9 +237,9 @@ private slots:
         QCOMPARE(scrollBar->value(), 0);
         wheel(editor, {0, -120}, Qt::NoModifier);
         QVERIFY(scrollBar->value() > 0);
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
         wheel(editor, {0, 120}, Qt::ShiftModifier);
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
 
         wheel(editor, {0, 120000});
         QCOMPARE(editor.font().pointSizeF(), 96.0);
@@ -251,7 +254,7 @@ private slots:
         wheel(editor, {0, 120});
         QCOMPARE(editor.font().pointSizeF(), 1.05);
         editor.resetTextSize();
-        QCOMPARE(editor.font().pointSizeF(), 10.0);
+        QCOMPARE(editor.font().pointSizeF(), normalPointSize);
     }
     void textZoomPreservesEditingState()
     {
@@ -284,7 +287,7 @@ private slots:
         QVERIFY(editor.document()->isRedoAvailable());
         editor.redo();
         QCOMPARE(editor.document()->toRawText(), edited);
-        QCOMPARE(editor.font().pointSizeF(), 10.5);
+        QCOMPARE(editor.font().pointSizeF(), oneNotchPointSize);
     }
     void textZoomPerTabAndResetAction()
     {
@@ -305,13 +308,13 @@ private slots:
         toolbar->actions()[0]->trigger();
         auto *second = qobject_cast<Editor *>(tabs->currentWidget());
         QVERIFY(second && second != first);
-        QCOMPARE(second->font().pointSizeF(), 10.0);
+        QCOMPARE(second->font().pointSizeF(), normalPointSize);
         wheel(*second, {0, 240});
         const auto secondSize = second->font().pointSizeF();
         tabs->setCurrentWidget(first);
-        QCOMPARE(first->font().pointSizeF(), 10.5);
+        QCOMPARE(first->font().pointSizeF(), oneNotchPointSize);
         normalSize->trigger();
-        QCOMPARE(first->font().pointSizeF(), 10.0);
+        QCOMPARE(first->font().pointSizeF(), normalPointSize);
         QCOMPARE(second->font().pointSizeF(), secondSize);
 
         wheel(*first, {0, 120});
@@ -319,14 +322,14 @@ private slots:
         second->setFocus();
         QTRY_VERIFY(second->hasFocus());
         QTest::keyClick(second, Qt::Key_0, Qt::ControlModifier);
-        QCOMPARE(second->font().pointSizeF(), 10.0);
-        QCOMPARE(first->font().pointSizeF(), 10.5);
+        QCOMPARE(second->font().pointSizeF(), normalPointSize);
+        QCOMPARE(first->font().pointSizeF(), oneNotchPointSize);
         QVERIFY(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Q_ARG(int, 1)));
         QVERIFY(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Q_ARG(int, 0)));
         QCOMPARE(tabs->count(), 0);
         normalSize->trigger(); // Closing the last tab leaves the menu safe to use.
         toolbar->actions()[0]->trigger();
-        QCOMPARE(qobject_cast<Editor *>(tabs->currentWidget())->font().pointSizeF(), 10.0);
+        QCOMPARE(qobject_cast<Editor *>(tabs->currentWidget())->font().pointSizeF(), normalPointSize);
     }
     void files()
     {

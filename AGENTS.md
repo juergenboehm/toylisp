@@ -20,6 +20,8 @@ editor remains planned.
   remains planned.
 - `src/evaluators/sanskrit/`: Devanagari/SLP1 conversion, Cologne dictionary/inflection
   adapters and asynchronous Sanskrit evaluator.
+- `src/evaluators/test/`: development evaluator for local Devanagari/SLP1
+  transliteration experiments.
 - `src/lookups/`: reusable HTTP client (`httpclient.h` / `httpclient.cpp`).
 - `tests/`: Qt Test coverage plus Lisp500 C regressions and a native FASL fixture.
 - `resources/`: bundled toolbar SVG icons.
@@ -120,10 +122,10 @@ Preserve the original library and its function/variable names. Its remaining
 incomplete Common Lisp features are outside this port's scope.
 
 The application uses Qt's Fusion widget style and requests Segoe UI at 9 points
-for the application and Courier New at 10 points for editors. Qt handles font
+for the application and DejaVu Sans Mono at 12 points for editors. Qt handles font
 substitution when needed. Editor text zoom uses Ctrl+mouse wheel, with 5% per notch
 and fractional sizes for fine wheel/touchpad input, limited to 1–96 points.
-View → Normal Size (Ctrl+0) restores 10 points in the current editor. Zoom belongs
+View → Normal Size (Ctrl+0) restores 12 points in the current editor. Zoom belongs
 to each open tab; new/reopened tabs start at normal size and zoom is not persisted.
 Keep tab stops four spaces wide at every size. Zoom must preserve document text,
 selection, modified state and undo/redo history. Configurable font families and
@@ -148,9 +150,10 @@ QtCore-only `toylisp_core`.
 
 `EvaluationJob` adds completion/cancellation while arithmetic remains immediate
 and keeps its shared environment. `toylisp_lookups` builds the reusable HTTP client
-from `src/lookups/` and Sanskrit code from `src/evaluators/sanskrit/`
-(QtCore + QtNetwork). Sanskrit is registered once at application setup. Separate
-HTTP transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
+from `src/lookups/` and both Sanskrit and Test evaluator code (QtCore + QtNetwork).
+The Test evaluator uses the shared transliteration for a local round trip via
+`==test`. Both evaluators are registered once at application setup. Separate HTTP
+transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
 one global, saved German PWG / English MW setting. Running jobs capture that
 language. Convert a single Devanagari word locally to SLP1; search both its exact
 form and distinct Cologne MW Inflected Forms headwords/roots. Prefix every

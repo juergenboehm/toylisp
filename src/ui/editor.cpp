@@ -14,7 +14,7 @@
 #include <QWheelEvent>
 
 namespace {
-constexpr qreal normalTextPointSize = 10.0;
+constexpr qreal normalTextPointSize = 12.0;
 
 QString outputText(QTextDocument *document, const EvaluationBlock &block)
 {
@@ -39,7 +39,13 @@ Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     : QPlainTextEdit(parent)
     , registry(registry)
 {
-    setFont(QFont("Courier New"));
+    //setFont(QFont("Courier New"));
+
+    QFont iastFont("DejaVu Sans Mono");
+    //iastFont.setStyleStrategy(QFont::PreferAntialias);
+
+    setFont(iastFont);
+
     resetTextSize();
     setLineWrapMode(QPlainTextEdit::NoWrap);
     new BracketHighlighter(document());
