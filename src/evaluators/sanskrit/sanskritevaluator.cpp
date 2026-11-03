@@ -12,18 +12,20 @@ public:
         HttpClient &http,
         const SanskritEndpoints &endpoints,
         SanskritLanguage language,
-        const QString &word,
         QObject *parent)
         : EvaluationJob(parent)
         , http(http)
         , endpoints(endpoints)
         , language(language)
-        , word(word)
     {
         connect(this, &EvaluationJob::cancellationRequested, this, [this] {
             for (auto *request : findChildren<HttpRequest *>())
                 request->cancel();
         });
+    }
+
+    void startWord(const QString &word)
+    {
         headwords.append(word);
         lookup(word);
         QUrl url = endpoints.inflectedForms;
@@ -57,12 +59,23 @@ public:
         });
     }
 
+    void startHeadwords(const QList<SanskritHeadword> &lemmas)
+    {
+        morphologyDone = true;
+        for (const auto &lemma : lemmas) {
+            headwords.append(lemma.slp1);
+            headwordLabels.insert(lemma.slp1, lemma.label);
+            lookup(lemma.slp1);
+        }
+        finishIfReady();
+    }
+
 private:
     HttpClient &http;
     SanskritEndpoints endpoints;
     SanskritLanguage language;
-    QString word;
     QStringList headwords;
+    QMap<QString, QString> headwordLabels;
     QStringList morphologyHeadwords;
     QMap<QString, QStringList> meanings;
     QMap<QString, QMap<qint64, QStringList>> referenceMeanings;
@@ -153,6 +166,15 @@ private:
             return;
         QStringList lines;
         for (const auto &headword : headwords) {
+            if (headwordLabels.contains(headword)) {
+                const auto glosses = meanings.value(headword);
+                QString gloss = glosses.mid(0, 2).join("; ");
+                if (glosses.size() > 2)
+                    gloss += QString::fromUtf8(" …");
+                lines.append("  " + headwordLabels.value(headword) + ": "
+                             + (gloss.isEmpty() ? QString("No usable MW gloss") : gloss));
+                continue;
+            }
             for (const auto &reference : referenceMeanings.value(headword)) {
                 for (const auto &meaning : reference)
                     lines.append(slp1ToDevanagari(headword) + QString::fromUtf8(" — ") + meaning);
@@ -174,7 +196,7 @@ private:
             if (morphologyHeadwords.isEmpty())
                 lines.append(
                     "No dictionary entry or supported base form found for "
-                    + slp1ToDevanagari(word));
+                    + slp1ToDevanagari(headwords.value(0)));
             else
                 lines.append(
                     QString("No dictionary meanings found in ")
@@ -198,5 +220,15 @@ EvaluationJob *SanskritEvaluator::startEvaluation(const QString &input, QObject 
         job->finish({false, error});
         return job;
     }
-    return new SanskritJob(http, endpoints, language, word, parent);
+    auto *job = new SanskritJob(http, endpoints, language, parent);
+    job->startWord(word);
+    return job;
+}
+
+EvaluationJob *SanskritEvaluator::startMonierWilliamsLookup(
+    const QList<SanskritHeadword> &lemmas, QObject *parent)
+{
+    auto *job = new SanskritJob(http, endpoints, SanskritLanguage::English, parent);
+    job->startHeadwords(lemmas);
+    return job;
 }

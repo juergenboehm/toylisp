@@ -1,15 +1,18 @@
 #include "mainwindow.h"
 #include "editor.h"
 #include "evaluators/sanskrit/sanskritevaluator.h"
+#include "evaluators/sanskritverse/sanskritverseevaluator.h"
 #include "evaluators/test/testevaluator.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialog>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -62,9 +65,14 @@ MainWindow::MainWindow()
     auto sanskrit = std::make_unique<SanskritEvaluator>();
     auto *sanskritEvaluator = sanskrit.get();
     registry.addEvaluator("sanskrit", std::move(sanskrit));
+    registry.addEvaluator(
+        "sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(pythonWorker, *sanskritEvaluator));
     registry.addEvaluator("test", std::make_unique<TestEvaluator>());
 
     auto *sanskritMenu = menuBar()->addMenu("&Sanskrit");
+    auto *python = sanskritMenu->addAction("&Python Interpreter…");
+    python->setObjectName("pythonInterpreterAction");
+    connect(python, &QAction::triggered, this, &MainWindow::choosePythonInterpreter);
     auto *languages = sanskritMenu->addMenu("Result &Language");
     auto *languageGroup = new QActionGroup(this);
     const QString savedLanguage
@@ -140,6 +148,7 @@ MainWindow::MainWindow()
     auto *selector = new QComboBox(toolbar);
     selector->addItem("Arithmetic", "arith");
     selector->addItem("Sanskrit Lookup", "sanskrit");
+    selector->addItem("Sanskrit Verse (Dharmamitra + MW)", "sanskrit-verse");
     selector->addItem("Test", "test");
     selector->setObjectName("evaluatorSelector");
     toolbar->addWidget(selector);
@@ -151,6 +160,40 @@ MainWindow::MainWindow()
     lookupStatus->setObjectName("lookupStatus");
     statusBar()->addPermanentWidget(lookupStatus);
     addEditor();
+    const QString pythonError = configurePythonDispatcher(
+        pythonWorker, QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString());
+    if (!pythonError.isEmpty())
+        statusBar()->showMessage(pythonError);
+}
+
+void MainWindow::choosePythonInterpreter()
+{
+    QSettings settings("ToyLisp", "ToyLisp");
+    const QString key = "sanskrit/pythonInterpreter";
+    bool accepted = false;
+    QString path
+        = QInputDialog::getText(
+              this, "Python Interpreter",
+              "Path to Python with requests and indic-transliteration installed.\n"
+              "Leave blank to disable verse analysis.",
+              QLineEdit::Normal, settings.value(key).toString(), &accepted)
+              .trimmed();
+    if (!accepted)
+        return;
+    if (path.startsWith("~/"))
+        path.replace(0, 1, QDir::homePath());
+    const QFileInfo executable(path);
+    if (!path.isEmpty() && (!executable.isAbsolute() || !executable.isFile()
+                            || !executable.isExecutable())) {
+        QMessageBox::warning(this, "Python Interpreter", "Enter the absolute path to an executable.");
+        return;
+    }
+    const auto error = configurePythonDispatcher(pythonWorker, path);
+    if (!error.isEmpty()) {
+        QMessageBox::warning(this, "Python Interpreter", error);
+        return;
+    }
+    settings.setValue(key, path);
 }
 Editor *MainWindow::currentEditor() const
 {

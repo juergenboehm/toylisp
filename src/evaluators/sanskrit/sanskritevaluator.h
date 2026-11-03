@@ -10,6 +10,12 @@ struct SanskritEndpoints
         "https://www.sanskrit-lexicon.uni-koeln.de/scans/csl-inflect/web/getWord.php"};
 };
 
+struct SanskritHeadword
+{
+    QString slp1;
+    QString label;
+};
+
 class SanskritEvaluator : public Evaluator
 {
 public:
@@ -18,6 +24,7 @@ public:
     void setLanguage(SanskritLanguage value) { language = value; }
     SanskritLanguage resultLanguage() const { return language; }
     EvaluationJob *startEvaluation(const QString &input, QObject *parent) override;
+    EvaluationJob *startMonierWilliamsLookup(const QList<SanskritHeadword> &lemmas, QObject *parent);
 
 private:
     HttpClient http;

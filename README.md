@@ -32,6 +32,8 @@ but a Windows build has not yet been verified.
 - Asynchronous Sanskrit lookup through Cologne C-SALT, with Devanagari input,
   German/English results and lookup of inflected forms through a separate
   Cologne service. Each meaning starts with its matched headword/base form.
+- Sanskrit verse analysis through Dharmamitra with Padapāṭha, grammatical
+  tags and short Cologne Monier-Williams glosses.
 - A development evaluator for testing Devanagari/SLP1 transliteration locally.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
@@ -175,6 +177,38 @@ PWG sub-senses whose initial label is encoded separately are supported, includin
 `वसुधा` → “die Erde; Land, Reich”. If a homonymous entry is unsupported or
 malformed, usable meanings from the other entries remain visible with an
 incomplete-lookup diagnostic; the unsupported entry does not discard them.
+
+## Sanskrit verse analysis
+
+Install `requests` and `indic-transliteration` in a Python 3 environment and
+enter its executable under **Sanskrit → Python Interpreter…**. Enter an absolute
+path or a path starting with `~/`. ToyLisp saves the path and applies it
+immediately. A blank setting disables verse analysis.
+
+Use `==sanskrit-verse` or select **Sanskrit Verse (Dharmamitra + MW)** in the
+default evaluator list.
+
+```text
+>>
+कर्मण्येवाधिकारस्ते मा फलेषु कदाचन
+==sanskrit-verse
+```
+
+The bundled Python dispatcher transliterates the text to IAST and sends it to
+Dharmamitra's online tagger. ToyLisp formats the returned word forms and tags
+as Padapāṭha and grammar, then looks up distinct recognized lemmata in Cologne's
+MW dictionary. The verse evaluator uses English MW independently of the
+word lookup's language setting. It shows up to two extracted dictionary glosses
+per lemma with an ellipsis for further glosses. The grammar display formats
+the supplied features and shows empty tags as `Unspecified`. MW queries use
+the supplied lemmata transliterated to SLP1.
+
+One asynchronous Python process starts at launch when configured and is reused
+across tabs. It processes one analysis at a time. Cancelling an active analysis
+discards its reply. A worker failure or timeout fails pending requests, and a
+later evaluation starts the worker again. A request supports up to 4,000 input
+characters and 64 analyzed words, with a 40-second worker deadline once sent.
+Dictionary failures preserve the analysis and available glosses.
 
 ## Development evaluator
 
@@ -455,6 +489,10 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 - `src/evaluators/sanskrit/`: Sanskrit transliteration, provider adapters and
   asynchronous evaluator. These and the HTTP client are built into
   `toylisp_lookups` (QtCore + QtNetwork).
+- `src/evaluators/sanskritverse/`: Dharmamitra verse evaluator and bundled
+  Python dispatcher. The evaluator is built into `toylisp_lookups`.
+- `src/processes/`: reusable asynchronous JSON-line child process channel in
+  `toylisp_core`.
 - `src/evaluators/test/`: development evaluator, currently for local transliteration
   experiments. It is built into `toylisp_lookups` alongside the transliteration
   code it uses.

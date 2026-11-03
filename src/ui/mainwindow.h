@@ -1,5 +1,6 @@
 #pragma once
 #include "evaluators/evaluator.h"
+#include "processes/jsonprocess.h"
 #include <QMainWindow>
 class Editor;
 class QTabWidget;
@@ -15,6 +16,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
+    JsonProcess pythonWorker;
     EvaluatorRegistry registry;
     QTabWidget *editors;
     QPlainTextEdit *output;
@@ -29,4 +31,5 @@ private:
     void updateTitle(Editor *editor);
     void findReplace();
     void updateEvaluationActivity();
+    void choosePythonInterpreter();
 };

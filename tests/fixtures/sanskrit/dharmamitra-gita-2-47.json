@@ -1,0 +1,12 @@
+{
+  "words": [
+    {"form": "karmaṇi", "devanagari": "कर्मणि", "lemma": "karman", "slp1": "karman", "tag": "Case=Locative, Gender=Neuter, Number=Singular"},
+    {"form": "eva", "devanagari": "एव", "lemma": "eva", "slp1": "eva", "tag": ""},
+    {"form": "adhikāraḥ", "devanagari": "अधिकारः", "lemma": "adhikāra", "slp1": "aDikAra", "tag": "Case=Nominative, Gender=Masculine, Number=Singular"},
+    {"form": "te", "devanagari": "ते", "lemma": "tvad", "slp1": "tvad", "tag": "Case=Genitive, Number=Singular"},
+    {"form": "mā", "devanagari": "मा", "lemma": "mā", "slp1": "mA", "tag": ""},
+    {"form": "phaleṣu", "devanagari": "फलेषु", "lemma": "phala", "slp1": "Pala", "tag": "Case=Locative, Gender=Neuter, Number=Plural"},
+    {"form": "kadācana", "devanagari": "कदाचन", "lemma": "kadācana", "slp1": "kadAcana", "tag": ""}
+  ],
+  "notice": ""
+}

@@ -8,7 +8,8 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets Network)
 add_library(toylisp_core
         src/evaluators/evaluator.cpp
-        src/evaluators/arith/arithmeticevaluator.cpp)
+        src/evaluators/arith/arithmeticevaluator.cpp
+        src/processes/jsonprocess.cpp)
 target_include_directories(toylisp_core PUBLIC src)
 target_link_libraries(toylisp_core PUBLIC Qt5::Core)
 add_library(toylisp_lookups
@@ -16,7 +17,9 @@ add_library(toylisp_lookups
         src/evaluators/sanskrit/transliteration.cpp
         src/evaluators/sanskrit/sanskritparser.cpp
         src/evaluators/sanskrit/sanskritevaluator.cpp
-        src/evaluators/test/testevaluator.cpp)
+        src/evaluators/sanskritverse/sanskritverseevaluator.cpp
+        src/evaluators/test/testevaluator.cpp
+        resources/python.qrc)
 target_link_libraries(toylisp_lookups PUBLIC toylisp_core Qt5::Network)
 add_library(toylisp_ui
         src/ui/editor.cpp

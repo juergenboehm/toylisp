@@ -1,17 +1,21 @@
 #include "evaluators/sanskrit/sanskritevaluator.h"
 #include "evaluators/sanskrit/transliteration.h"
+#include "evaluators/sanskritverse/sanskritverseevaluator.h"
+#include "processes/jsonprocess.h"
 #include "ui/editor.h"
 #include "ui/mainwindow.h"
 #include <functional>
 #include <QAction>
 #include <QComboBox>
 #include <QFile>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QPointer>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -136,6 +140,141 @@ private slots:
     {
         QVERIFY(settingsDirectory.isValid());
         QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, settingsDirectory.path());
+    }
+    void verseEvaluation()
+    {
+        const QString python = QStandardPaths::findExecutable("python3");
+        if (python.isEmpty())
+            QSKIP("Python 3 is needed for the offline process fixture");
+        const QString script = QFINDTESTDATA("fixtures/sanskrit/verseworker.py");
+        QVERIFY(!script.isEmpty());
+        JsonProcess worker;
+        worker.configure(python, {"-u", script});
+        LookupServer server;
+        QVERIFY(server.isListening());
+        server.handler = [](const QUrl &url) -> Reply {
+            const QUrlQuery query(url);
+            const QString word = query.queryItemValue("query");
+            if (word == "tvad")
+                return {dictionary(word, "thou")};
+            if (word == "kadAcana")
+                return {emptyDictionary};
+            if (word == "Pala")
+                return {{}, 500};
+            return {dictionary(word, "test gloss")};
+        };
+        EvaluatorRegistry registry;
+        SanskritEvaluator dictionaryEvaluator(server.endpoints());
+        registry.addEvaluator("sanskrit-verse",
+                              std::make_unique<SanskritVerseEvaluator>(worker, dictionaryEvaluator));
+        Editor editor(registry);
+        const QString input = QString::fromUtf8(
+            ">>\nकर्मण्येवाधिकारस्ते मा फलेषु कदाचन\n==sanskrit-verse\nold output\n##");
+        editor.setPlainText(input);
+        evaluate(editor);
+        QCOMPARE(editor.toPlainText(), input);
+        QTRY_VERIFY(editor.toPlainText().contains("Lookup incomplete:"));
+        const QString output = editor.toPlainText();
+        QVERIFY(output.contains(QString::fromUtf8(
+            "Padapāṭha: कर्मणि | एव | अधिकारः | ते | मा | फलेषु | कदाचन")));
+        QVERIFY(output.contains(QString::fromUtf8(
+            "karmaṇi (Loc.Sg.n) | eva (Unspecified) | adhikāraḥ (Nom.Sg.m) | te (Gen.Sg)"
+            " | mā (Unspecified) | phaleṣu (Loc.Pl.n) | kadācana (Unspecified)")));
+        QVERIFY(output.contains(QString::fromUtf8("त्वद् (tvad → te): thou")));
+        QVERIFY(output.contains(QString::fromUtf8("कदाचन (kadācana): No usable MW gloss")));
+        QVERIFY(output.contains("HTTP 500"));
+        QStringList keys;
+        for (const auto &url : server.requests) {
+            QCOMPARE(url.path(), QString("/dicts/mw/restful/entries"));
+            keys.append(QUrlQuery(url).queryItemValue("query"));
+        }
+        keys.sort();
+        QCOMPARE(keys, QStringList({"Pala", "aDikAra", "eva", "kadAcana", "kadAcana", "karman",
+                                    "mA", "tvad"}));
+        editor.undo();
+        QCOMPARE(editor.toPlainText(), input);
+        editor.redo();
+        QCOMPARE(editor.toPlainText(), output);
+    }
+    void workerCancellationAndRestart()
+    {
+        const QString python = QStandardPaths::findExecutable("python3");
+        if (python.isEmpty())
+            QSKIP("Python 3 is needed for the offline process fixture");
+        const QString script = QFINDTESTDATA("fixtures/sanskrit/verseworker.py");
+        QVERIFY(!script.isEmpty());
+        JsonProcess worker;
+        QObject context, cancelled;
+        worker.configure(python, {"-u", script});
+        int pid = 0;
+        QString error;
+        const auto echo = [&](const QJsonObject &reply, const QString &failure) {
+            pid = reply.value("pid").toInt();
+            error = failure;
+        };
+        worker.call("echo", {}, &context, echo);
+        QTRY_VERIFY(pid != 0);
+        const int initialPid = pid;
+        bool cancelledCompleted = false;
+        const auto unexpected = [&](const QJsonObject &, const QString &) {
+            cancelledCompleted = true;
+        };
+        worker.call("delay", {}, &cancelled, unexpected);
+        worker.call("echo", {}, &cancelled, unexpected);
+        worker.cancel(&cancelled);
+        pid = 0;
+        worker.call("echo", {}, &context, echo);
+        QTRY_COMPARE(pid, initialPid);
+        QVERIFY(error.isEmpty());
+        QVERIFY(!cancelledCompleted);
+
+        int failures = 0;
+        const auto recordFailure = [&](const QJsonObject &, const QString &failure) {
+            error = failure;
+            ++failures;
+        };
+        worker.call("crash", {}, &context, recordFailure);
+        worker.call("echo", {}, &context, recordFailure);
+        QTRY_COMPARE(failures, 2);
+        QVERIFY(error.contains("test worker failure"));
+        pid = 0;
+        worker.call("echo", {}, &context, echo);
+        QTRY_VERIFY(pid != 0);
+        QVERIFY(error.isEmpty());
+    }
+    void pythonInterpreterMenuAndPersistence()
+    {
+        const QString python = QStandardPaths::findExecutable("python3");
+        if (python.isEmpty())
+            QSKIP("Python 3 is needed to test the interpreter setting");
+        QSettings settings("ToyLisp", "ToyLisp");
+        const QString key = "sanskrit/pythonInterpreter";
+        QString displayed;
+        const auto setInterpreter = [&](MainWindow &window, const QString &path) {
+            auto *action = window.findChild<QAction *>("pythonInterpreterAction");
+            QVERIFY(action);
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = qobject_cast<QInputDialog *>(QApplication::activeModalWidget());
+                if (dialog) {
+                    displayed = dialog->textValue();
+                    dialog->setTextValue(path);
+                    dialog->accept();
+                }
+            });
+            action->trigger();
+        };
+        {
+            MainWindow window;
+            setInterpreter(window, python);
+        }
+        QCOMPARE(settings.value(key).toString(), python);
+        {
+            MainWindow reopened;
+            setInterpreter(reopened, {});
+        }
+        QCOMPARE(displayed, python);
+        QCOMPARE(settings.value(key).toString(), QString());
+        settings.remove(key);
     }
     void transliteration_data()
     {

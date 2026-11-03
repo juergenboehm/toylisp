@@ -4,8 +4,8 @@
 
 ToyLisp is a C++17 / Qt5 Widgets desktop application built with CMake. Linux is
 its initial target; Windows compatibility is intended but unverified. Arithmetic
-and asynchronous Sanskrit lookup are implemented. Identity, Lisp and Macaulay2
-remain planned capabilities.
+and asynchronous Sanskrit word lookup and verse analysis are implemented.
+Identity, Lisp and Macaulay2 remain planned capabilities.
 The standalone Lisp500 CLI has a Linux LP64 port; Lisp integration into the Qt
 editor remains planned.
 
@@ -20,6 +20,9 @@ editor remains planned.
   remains planned.
 - `src/evaluators/sanskrit/`: Devanagari/SLP1 conversion, Cologne dictionary/inflection
   adapters and asynchronous Sanskrit evaluator.
+- `src/evaluators/sanskritverse/`: Dharmamitra verse evaluator and bundled Python
+  dispatcher.
+- `src/processes/`: QtCore asynchronous JSON-line child process channel.
 - `src/evaluators/test/`: development evaluator for local Devanagari/SLP1
   transliteration experiments.
 - `src/lookups/`: reusable HTTP client (`httpclient.h` / `httpclient.cpp`).
@@ -150,15 +153,30 @@ QtCore-only `toylisp_core`.
 
 `EvaluationJob` adds completion/cancellation while arithmetic remains immediate
 and keeps its shared environment. `toylisp_lookups` builds the reusable HTTP client
-from `src/lookups/` and both Sanskrit and Test evaluator code (QtCore + QtNetwork).
+from `src/lookups/` and the Sanskrit word, Sanskrit verse and Test evaluator code
+(QtCore + QtNetwork).
 The Test evaluator uses the shared transliteration for a local round trip via
-`==test`. Both evaluators are registered once at application setup. Separate HTTP
+`==test`. These evaluators are registered once at application setup. Separate HTTP
 transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
 one global, saved German PWG / English MW setting. Running jobs capture that
 language. Convert a single Devanagari word locally to SLP1; search both its exact
 form and distinct Cologne MW Inflected Forms headwords/roots. Prefix every
-meaning with its matched Devanagari headword. Sentence sandhi, compound splitting
-and Vedic accent input remain unsupported.
+meaning with its matched Devanagari headword. The word evaluator accepts a
+single word and has no sentence sandhi, compound splitting or Vedic accent support.
+
+The separate `==sanskrit-verse` evaluator sends IAST text to Dharmamitra through
+the bundled Python dispatcher and uses the returned unsandhied forms, lemmata
+and tags. Use the same formatting for all supplied tags, show empty tags as
+`Unspecified` and send the supplied lemmata in SLP1 to the shared Cologne MW
+headword and TEI code. Keep the response across the process channel compact.
+Dictionary errors retain Padapāṭha, grammar and any available glosses. The interpreter
+is configured under Sanskrit → Python Interpreter and requires `requests` and
+`indic-transliteration`. Keep user-specific paths out of source. Start one
+configured worker asynchronously, reserve stdout for UTF-8 JSON lines and
+route stderr separately. Match request IDs, bound queued requests, time and
+message size, drop cancelled replies, and restart a failed worker on demand.
+Offline tests use a recorded verse analysis, a fixture Python process and a
+local dictionary server. The process fixture needs Python 3 on PATH.
 
 Read TEI rather than trusting MW's incomplete flat `sense` array; PWG's schema
 differs. Extraction is conservative and abbreviated: omit unrelated run-on entries,
