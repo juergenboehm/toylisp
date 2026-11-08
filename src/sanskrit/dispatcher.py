@@ -1,4 +1,4 @@
-"""ToyLisp worker. Only protocol messages are written to standard output."""
+"""Sanskrit analysis worker. Only protocol messages are written to standard output."""
 
 import contextlib
 import json
@@ -15,7 +15,9 @@ def analyze_sanskrit(params):
     text = params["text"]
     if not isinstance(text, str) or not text.strip() or len(text) > 4000:
         raise ValueError("Enter Sanskrit text of at most 4000 characters")
-    iast = sanscript.transliterate(text, sanscript.DEVANAGARI, sanscript.IAST)
+    schemes = {"devanagari": sanscript.DEVANAGARI, "iast": sanscript.IAST, "slp1": sanscript.SLP1}
+    scheme = schemes[params["scheme"]]
+    iast = sanscript.transliterate(text, scheme, sanscript.IAST)
     with requests.post(
         "https://dharmamitra.org/api-tagging/tagging-parsed/",
         json={

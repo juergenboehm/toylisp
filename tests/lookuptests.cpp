@@ -1,6 +1,7 @@
 #include "evaluators/sanskrit/sanskritevaluator.h"
-#include "evaluators/sanskrit/transliteration.h"
-#include "evaluators/sanskritverse/sanskritverseevaluator.h"
+#include "sanskrit/sanskrit.h"
+#include "sanskrit/sanskritparser.h"
+#include "sanskrit/sanskritserviceqt.h"
 #include "processes/jsonprocess.h"
 #include "ui/editor.h"
 #include "ui/mainwindow.h"
@@ -23,6 +24,9 @@
 #include <QTextBlock>
 #include <QUrlQuery>
 #include <QtTest>
+
+using namespace sanskrit;
+using namespace sanskrit::detail;
 
 namespace {
 QByteArray fixture(const QString &name)
@@ -148,8 +152,6 @@ private slots:
             QSKIP("Python 3 is needed for the offline process fixture");
         const QString script = QFINDTESTDATA("fixtures/sanskrit/verseworker.py");
         QVERIFY(!script.isEmpty());
-        JsonProcess worker;
-        worker.configure(python, {"-u", script});
         LookupServer server;
         QVERIFY(server.isListening());
         server.handler = [](const QUrl &url) -> Reply {
@@ -164,9 +166,10 @@ private slots:
             return {dictionary(word, "test gloss")};
         };
         EvaluatorRegistry registry;
-        SanskritEvaluator dictionaryEvaluator(server.endpoints());
-        registry.addEvaluator("sanskrit-verse",
-                              std::make_unique<SanskritVerseEvaluator>(worker, dictionaryEvaluator));
+        SanskritServiceQt service(server.endpoints());
+        service.configureWorker(python, {"-u", script});
+        Sanskrit sanskrit(service);
+        registry.addEvaluator("sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(sanskrit));
         Editor editor(registry);
         const QString input = QString::fromUtf8(
             ">>\nकर्मण्येवाधिकारस्ते मा फलेषु कदाचन\n==sanskrit-verse\nold output\n##");
@@ -300,11 +303,11 @@ private slots:
     {
         QFETCH(QString, deva);
         QFETCH(QString, slp);
-        QString result, error;
-        QVERIFY2(devanagariToSlp1(deva, result, error), qPrintable(error));
-        QCOMPARE(result, slp);
-        QCOMPARE(slp1ToDevanagari(result), deva);
-        QVERIFY(isSlp1Word(slp));
+        const auto result = Sanskrit::transliterateWord(deva.toStdString(), Script::Devanagari, Script::Slp1);
+        QVERIFY2(result.error.empty(), result.error.c_str());
+        QCOMPARE(QString::fromStdString(result.text), slp);
+        const auto roundTrip = Sanskrit::transliterate(result.text, Script::Slp1, Script::Devanagari);
+        QCOMPARE(QString::fromStdString(roundTrip.text), deva);
     }
     void invalidInput()
     {
@@ -318,13 +321,12 @@ private slots:
               QString::fromUtf8("क़"),
               QString::fromUtf8("ॐ"),
               QString(129, QChar(0x0905))}) {
-            QString result, error;
-            QVERIFY(!devanagariToSlp1(input, result, error));
-            QVERIFY(!error.isEmpty());
+            const auto result = Sanskrit::transliterateWord(input.toStdString(), Script::Devanagari, Script::Slp1);
+            QVERIFY(!result.error.empty());
         }
-        QString result, error;
-        QVERIFY(devanagariToSlp1(QString::fromUtf8("  ग्‍च्छति\n"), result, error));
-        QCOMPARE(result, QString("gcCati"));
+        const auto result = Sanskrit::transliterateWord("  ग्‍च्छति\n", Script::Devanagari, Script::Slp1);
+        QVERIFY(result.error.empty());
+        QCOMPARE(QString::fromStdString(result.text), QString("gcCati"));
     }
     void morphologyFixtures()
     {
@@ -349,20 +351,20 @@ private slots:
     void dictionaryFixtures()
     {
         auto result
-            = parseSanskritDictionary(fixture("mw-agni.json"), "agni", SanskritLanguage::English);
+            = parseSanskritDictionary(fixture("mw-agni.json"), "agni", Dictionary::Mw);
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.values.size(), 9);
         QVERIFY(result.values.first().startsWith("fire, sacrificial fire"));
         QVERIFY(result.values.contains("gold"));
         QVERIFY(!result.values.join('\n').contains("fire-particle"));
         QVERIFY(!result.values.join('\n').contains("monier_"));
-        result = parseSanskritDictionary(fixture("pwg-gam.json"), "gam", SanskritLanguage::German);
+        result = parseSanskritDictionary(fixture("pwg-gam.json"), "gam", Dictionary::Pwg);
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.values.size(), 10); // Seven verb senses and three homonymous entries.
         QVERIFY(result.values.first().startsWith("gehen, sich bewegen"));
         QVERIFY(!result.values.join('\n').contains("Gang, Art zu gehen"));
         QVERIFY(!result.values.join('\n').contains("wenn dein Herz Furcht"));
-        result = parseSanskritDictionary(fixture("mw-bhu.json"), "BU", SanskritLanguage::English);
+        result = parseSanskritDictionary(fixture("mw-bhu.json"), "BU", Dictionary::Mw);
         QVERIFY2(result.ok, qPrintable(result.error));
         QVERIFY(result.values.first().startsWith("to become, be"));
         QVERIFY(!result.values.first().contains("baB"));
@@ -377,25 +379,25 @@ private slots:
               QByteArray("{\"data\":{\"entries\":{}}}"),
               dictionary("other", "meaning"),
               dictionary("agni", "<unclosed>")})
-            QVERIFY(!parseSanskritDictionary(json, "agni", SanskritLanguage::English).ok);
-        QVERIFY(parseSanskritDictionary(emptyDictionary, "agni", SanskritLanguage::German).ok);
-        QVERIFY(parseSanskritDictionary(emptyDictionary, "agni", SanskritLanguage::German)
+            QVERIFY(!parseSanskritDictionary(json, "agni", Dictionary::Mw).ok);
+        QVERIFY(parseSanskritDictionary(emptyDictionary, "agni", Dictionary::Pwg).ok);
+        QVERIFY(parseSanskritDictionary(emptyDictionary, "agni", Dictionary::Pwg)
                     .values.isEmpty());
         QVERIFY(
-            !parseSanskritDictionary(dictionary("gam", "no gloss"), "gam", SanskritLanguage::German)
+            !parseSanskritDictionary(dictionary("gam", "no gloss"), "gam", Dictionary::Pwg)
                  .ok);
     }
     void germanSubSensesAndPartialEntries()
     {
         auto result = parseSanskritDictionary(
-            fixture("pwg-vasudha.json"), "vasuDA", SanskritLanguage::German);
+            fixture("pwg-vasudha.json"), "vasuDA", Dictionary::Pwg);
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.values.size(), 3);
         QVERIFY(result.values.contains("die Erde; Land, Reich"));
         QVERIFY(result.values.join('\n').contains("Anapaest"));
         QVERIFY(!result.values.join('\n').contains("regiert habend"));
 
-        result = parseSanskritDictionary(fixture("pwg-eva.json"), "eva", SanskritLanguage::German);
+        result = parseSanskritDictionary(fixture("pwg-eva.json"), "eva", Dictionary::Pwg);
         QVERIFY(!result.ok);
         QVERIFY(!result.error.isEmpty());
         QVERIFY(result.values.join('\n').contains("gerade, eben, kaum, nur, noch, schon"));
@@ -416,7 +418,7 @@ private slots:
             result = parseSanskritDictionary(
                 QJsonDocument(QJsonObject{{"data", QJsonObject{{"entries", entries}}}}).toJson(),
                 "eva",
-                SanskritLanguage::German);
+                Dictionary::Pwg);
             QVERIFY(!result.ok);
             QCOMPARE(result.values, QStringList{"nur"});
         }
@@ -424,21 +426,21 @@ private slots:
     void subentryAndPreviousDefinitionFixtures()
     {
         auto result = parseSanskritSubentries(
-            fixture("mw-kutumba.json"), "kuwumbaka", SanskritLanguage::English);
+            fixture("mw-kutumba.json"), "kuwumbaka", Dictionary::Mw);
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.values.size(), 3);
         QCOMPARE(result.values.first(), QString("a household, family"));
         QVERIFY(!result.values.join('\n').contains("domestic dissension"));
         QVERIFY(!result.values.join('\n').contains("an attentive father"));
         QVERIFY(!parseSanskritDictionary(
-                     fixture("mw-kutumba.json"), "kuwumbaka", SanskritLanguage::English)
+                     fixture("mw-kutumba.json"), "kuwumbaka", Dictionary::Mw)
                      .ok);
         QVERIFY(
-            !parseSanskritSubentries(fixture("mw-kutumba.json"), "other", SanskritLanguage::English)
+            !parseSanskritSubentries(fixture("mw-kutumba.json"), "other", Dictionary::Mw)
                  .ok);
 
         result = parseSanskritDictionary(
-            fixture("pwg-kutumbaka.json"), "kuwumbaka", SanskritLanguage::German);
+            fixture("pwg-kutumbaka.json"), "kuwumbaka", Dictionary::Pwg);
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.previousEntries, QList<qint64>{17548});
         QVERIFY(result.values.first().startsWith("eine best. Grasart"));
@@ -446,7 +448,8 @@ private slots:
 
         result = parseSanskritPreviousEntry(fixture("pwg-before-kutumbaka.json"), 17548);
         QVERIFY2(result.ok, qPrintable(result.error));
-        QVERIFY(result.values.first().startsWith(QString::fromUtf8("wie कुटुम्ब: Hausstand")));
+        QVERIFY(result.values.first().startsWith("Hausstand"));
+        QCOMPARE(result.sourceHeadword, QString("kuwumba"));
         QVERIFY(result.previousEntries.isEmpty());
         result = parseSanskritPreviousEntry(fixture("pwg-before-kutumbaka.json"), 17547);
         QVERIFY(!result.ok);
@@ -472,13 +475,13 @@ private slots:
         QVERIFY(result.previousEntries.isEmpty());
 
         result
-            = parseSanskritDictionary(dictionary("rAma", "dass."), "rAma", SanskritLanguage::German);
+            = parseSanskritDictionary(dictionary("rAma", "dass."), "rAma", Dictionary::Pwg);
         QVERIFY(!result.ok); // Never guess a predecessor from the spelling alone.
         QVERIFY(result.previousEntries.isEmpty());
         result = parseSanskritDictionary(
             dictionary("rAma", "<sense n=\"1)\">1) dass.</sense>", false, 900),
             "rAma",
-            SanskritLanguage::German);
+            Dictionary::Pwg);
         QVERIFY(result.previousEntries.isEmpty()); // A numbered sense may refer within the entry.
     }
     void responseLimits()
@@ -490,12 +493,12 @@ private slots:
             full.append(entry);
         response["data"] = QJsonObject{{"entries", full}};
         QVERIFY(!parseSanskritDictionary(
-                     QJsonDocument(response).toJson(), "agni", SanskritLanguage::English)
+                     QJsonDocument(response).toJson(), "agni", Dictionary::Mw)
                      .ok);
         const QString deeplyNested = QString("<sense>").repeated(70) + "fire"
                                      + QString("</sense>").repeated(70);
         QVERIFY(!parseSanskritDictionary(
-                     dictionary("agni", deeplyNested), "agni", SanskritLanguage::English)
+                     dictionary("agni", deeplyNested), "agni", Dictionary::Mw)
                      .ok);
     }
     void networkLookupAndLanguageSnapshot()
@@ -508,10 +511,12 @@ private slots:
             const QString word = QUrlQuery(url).queryItemValue("query");
             return {word == "gam" ? fixture("pwg-gam.json") : emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("गच्छति"), this));
-        evaluator.setLanguage(SanskritLanguage::English);
+        evaluator.setDictionary(Dictionary::Mw);
         QVERIFY(!job->isFinished());
         QTRY_VERIFY(job->isFinished());
         QVERIFY2(job->result().ok, qPrintable(job->result().text));
@@ -540,8 +545,10 @@ private slots:
                 return {dictionary(word, "to become")};
             return {emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
-        evaluator.setLanguage(SanskritLanguage::English);
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
+        evaluator.setDictionary(Dictionary::Mw);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("भवति"), this));
         QTRY_VERIFY(job->isFinished());
@@ -556,7 +563,9 @@ private slots:
         server.handler = [](const QUrl &url) -> Reply {
             return {url.path() == "/getWord.php" ? QByteArray("<disp1>\n") : emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(evaluator.startEvaluation(QString::fromUtf8("राम"), this));
         QTRY_VERIFY(job->isFinished());
         QVERIFY(job->result().ok);
@@ -602,7 +611,9 @@ private slots:
                 return {fixture("pwg-eva.json")};
             return {emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(evaluator.startEvaluation(word, this));
         QTRY_VERIFY(job->isFinished());
         QCOMPARE(job->result().ok, complete);
@@ -635,8 +646,10 @@ private slots:
                 return {fixture("mw-kutumba.json")};
             return {emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
-        evaluator.setLanguage(german ? SanskritLanguage::German : SanskritLanguage::English);
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
+        evaluator.setDictionary(german ? Dictionary::Pwg : Dictionary::Mw);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("कुटुम्बकम्"), this));
         QTRY_VERIFY(job->isFinished());
@@ -662,8 +675,10 @@ private slots:
         server.handler = [](const QUrl &url) -> Reply {
             return {url.path() == "/getWord.php" ? fixture("kutumbakam.html") : emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
-        evaluator.setLanguage(german ? SanskritLanguage::German : SanskritLanguage::English);
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
+        evaluator.setDictionary(german ? Dictionary::Pwg : Dictionary::Mw);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("कुटुम्बकम्"), this));
         QTRY_VERIFY(job->isFinished());
@@ -687,7 +702,9 @@ private slots:
                 query.queryItemValue("query") == "kuwumbaka" ? fixture("pwg-kutumbaka.json")
                                                              : emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("कुटुम्बकम्"), this));
         QTRY_VERIFY(job->isFinished());
@@ -709,7 +726,9 @@ private slots:
                                       : 100;
             return {dictionary("rAma", "dass.", false, record)};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(evaluator.startEvaluation(QString::fromUtf8("राम"), this));
         QTRY_VERIFY(job->isFinished());
         QVERIFY(!job->result().ok);
@@ -730,7 +749,9 @@ private slots:
                 query.queryItemValue("query") == "kuwumbaka" ? fixture("pwg-kutumbaka.json")
                                                              : emptyDictionary};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("कुटुम्बकम्"), this));
         QTRY_COMPARE(server.requests.size(), 4);
@@ -744,11 +765,13 @@ private slots:
     {
         LookupServer server;
         QVERIFY(server.isListening());
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(evaluator.startEvaluation("agni", this));
-        QVERIFY(job->isFinished());
+        QVERIFY(!job->isFinished());
+        QTRY_VERIFY(job->isFinished());
         QVERIFY(!job->result().ok);
-        QTest::qWait(20);
         QVERIFY(server.requests.isEmpty());
     }
     void cancellingLookupStopsDerivedRequests()
@@ -759,7 +782,9 @@ private slots:
             return {
                 url.path() == "/getWord.php" ? fixture("gacchati.html") : emptyDictionary, 200, 80};
         };
-        SanskritEvaluator evaluator(server.endpoints());
+        SanskritServiceQt service(server.endpoints());
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
         QScopedPointer<EvaluationJob> job(
             evaluator.startEvaluation(QString::fromUtf8("गच्छति"), this));
         QTRY_COMPARE(server.requests.size(), 2);
@@ -891,7 +916,7 @@ private slots:
             selector->setCurrentIndex(selector->findData("sanskrit"));
             editor->setPlainText(">>\nnot devanagari\n==");
             evaluate(*editor);
-            QVERIFY(editor->toPlainText().contains("Enter one Devanagari word"));
+            QTRY_VERIFY(editor->toPlainText().contains("Enter one Devanagari word"));
             editor->document()->setModified(false);
         }
         MainWindow reopened;
@@ -907,7 +932,7 @@ private slots:
         auto *selector = window.findChild<QComboBox *>("evaluatorSelector");
         selector->setCurrentIndex(selector->findData("sanskrit"));
         const auto parsed
-            = parseSanskritDictionary(fixture("pwg-gam.json"), "gam", SanskritLanguage::German);
+            = parseSanskritDictionary(fixture("pwg-gam.json"), "gam", Dictionary::Pwg);
         QVERIFY(parsed.ok);
         QStringList lines;
         for (const auto &meaning : parsed.values)
@@ -927,9 +952,11 @@ private slots:
         qInfo() << "TLS build:" << QSslSocket::sslLibraryBuildVersionString()
                 << "runtime:" << QSslSocket::sslLibraryVersionString();
         QVERIFY2(QSslSocket::supportsSsl(), "Qt cannot load a compatible TLS runtime");
-        SanskritEvaluator evaluator({}, {30000, 4 * 1024 * 1024});
-        for (const auto language : {SanskritLanguage::German, SanskritLanguage::English}) {
-            evaluator.setLanguage(language);
+        SanskritServiceQt service({}, {30000, 4 * 1024 * 1024});
+        Sanskrit sanskrit(service);
+        SanskritEvaluator evaluator(sanskrit);
+        for (const auto language : {Dictionary::Pwg, Dictionary::Mw}) {
+            evaluator.setDictionary(language);
             QScopedPointer<EvaluationJob> job(
                 evaluator.startEvaluation(QString::fromUtf8("गच्छति"), this));
             QTRY_VERIFY_WITH_TIMEOUT(job->isFinished(), 65000);
@@ -940,13 +967,13 @@ private slots:
             QTRY_VERIFY_WITH_TIMEOUT(job->isFinished(), 65000);
             QVERIFY2(job->result().ok, qPrintable(job->result().text));
             QVERIFY(job->result().text.contains(
-                language == SanskritLanguage::German ? "Hausstand, Hauswesen; Hausgesinde, Familie"
+                language == Dictionary::Pwg ? "Hausstand, Hauswesen; Hausgesinde, Familie"
                                                      : "a household, family"));
             for (const auto &line : job->result().text.split('\n'))
                 QVERIFY(line.startsWith(QString::fromUtf8("कुटुम्बक — ")));
             qInfo().noquote() << job->result().text.left(800);
         }
-        evaluator.setLanguage(SanskritLanguage::German);
+        evaluator.setDictionary(Dictionary::Pwg);
         const QList<QPair<QString, QString>> examples{
             {QString::fromUtf8("दूरतस्"), "aus der Ferne her"},
             {QString::fromUtf8("वसुधा"), "die Erde; Land, Reich"},

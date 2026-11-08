@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/python">
-        <file alias="dispatcher.py">../src/evaluators/sanskritverse/dispatcher.py</file>
-    </qresource>
-</RCC>

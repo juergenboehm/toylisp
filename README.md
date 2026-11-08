@@ -210,6 +210,48 @@ later evaluation starts the worker again. A request supports up to 4,000 input
 characters and 64 analyzed words, with a 40-second worker deadline once sent.
 Dictionary failures preserve the analysis and available glosses.
 
+## Sanskrit C++ library
+
+`src/sanskrit` contains a C++17 library for use in ToyLisp and other programs.
+The `sanskrit` target exposes `sanskrit::Sanskrit` and the abstract
+`sanskrit::SanskritService` through `sanskrit/sanskrit.h`. Public inputs and
+results use UTF-8 and standard C++ types. The target uses utf8proc internally.
+
+- `transliterate` works locally on words and whole texts in Devanagari, IAST
+  and SLP1. It preserves whitespace and punctuation outside recognized Sanskrit
+  letters and marks. It supports the classical repertoire, including vowel
+  length, virama, anusvāra, visarga, candrabindu and avagraha.
+  `transliterateWord` checks the stricter single-word repertoire used for
+  dictionary queries.
+- `lookupDictionary` searches a word in PWG or MW, with optional base forms.
+  `lookupHeadwords` searches a batch of exact SLP1 headwords. Results separate
+  meanings and their sources, recognized base forms and diagnostics.
+- `analyze` returns unsandhied forms, lemmata and grammatical features.
+  `analyzeWithGlosses` looks up distinct recognized lemmata in the selected
+  dictionary and preserves analysis and available glosses on partial failure.
+
+The optional `sanskrit_qt` target provides `SanskritServiceQt`, using Qt Core,
+Qt Network and the bundled Python dispatcher for the online operations. Provide
+that backend or an implementation of `SanskritService` when constructing
+`Sanskrit`. Keep the backend alive until the requests are done. Retain each
+returned `Request` until its callback runs. Cancelling or destroying the
+handle suppresses completion and stops follow-up work. Start and cancel
+operations on the backend's execution context. The Qt implementation uses the
+event loop of the thread that created it, including for local validation errors.
+
+To embed the library from a CMake project, use `add_subdirectory` on
+`src/sanskrit` and link to `sanskrit`. Set `SANSKRIT_BUILD_QT_SERVICE=ON`
+and link to `sanskrit_qt` if using the Qt backend. To build and test the
+Qt-free target separately:
+
+```bash
+cmake -S src/sanskrit -B build/sanskrit-core -DBUILD_TESTING=ON
+cmake --build build/sanskrit-core
+ctest --test-dir build/sanskrit-core --output-on-failure
+```
+
+Connected translation of sentences and verses is planned.
+
 ## Development evaluator
 
 The **Test** evaluator provides a place to try features during development. It
@@ -249,8 +291,12 @@ will have separate environments, with overrides using the same shared session.
 
 ## Build and run
 
-Requirements: CMake 3.16+, a C++17 compiler, Qt 5.12+ with Widgets/Network, and Qt Test
-when tests are enabled. Verified development toolchain: CMake 3.28.3, GCC 13.3,
+The application requires CMake 3.16+, a C++17 compiler, Qt 5.12+ with
+Widgets/Network, and Qt Test when tests are enabled. Install utf8proc
+development files, for example `libutf8proc-dev` and `pkg-config` on Ubuntu.
+CMake finds utf8proc through its CMake package or the `libutf8proc`
+pkg-config module. Add a custom installation prefix to `CMAKE_PREFIX_PATH`
+when needed. The verified development toolchain includes CMake 3.28.3, GCC 13.3,
 Qt 5.15.2 and Qt 5.15.13 on Linux. HTTPS also requires a TLS runtime compatible
 with the Qt build and a working certificate store. Qt's SVG image plugin is
 needed for toolbar icons.
@@ -338,7 +384,9 @@ file round trips, write failures, save/discard/cancel prompts and window
 construction. The window test writes
 `build/toylisp-screenshot.png` when run through CTest.
 
-`toylisp_lookup_tests` covers transliteration, recorded MW/PWG and morphology
+`sanskrit_tests` links only the Qt-free Sanskrit library and covers text
+transliteration, Unicode normalization, typed results, composition and cancellation.
+`toylisp_lookup_tests` covers word transliteration, recorded MW/PWG and morphology
 responses, malformed data, local HTTP requests, timeouts/limits, partial failure,
 PWG inline sub-sense labels, mixed supported/unsupported homonyms, exact final
 virama spelling and the reported `दूरतस्`, `वसुधा` and `एव` examples,
@@ -486,18 +534,15 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 - `src/evaluators/arith/`: arithmetic parser, evaluator and persistent session.
 - `src/evaluators/lisp500/`: standalone Lisp500 C/library originals and Linux LP64
   ports; Qt evaluator integration remains planned.
-- `src/evaluators/sanskrit/`: Sanskrit transliteration, provider adapters and
-  asynchronous evaluator. Its private `SanskritJob` class is declared in
-  `sanskritevaluator.h` and implemented in `sanskritevaluator.cpp`.
-  These and the HTTP client are built into `toylisp_lookups` (QtCore + QtNetwork).
-- `src/evaluators/sanskritverse/`: Dharmamitra verse evaluator and bundled
-  Python dispatcher. The evaluator is built into `toylisp_lookups`.
-- `src/processes/`: reusable asynchronous JSON-line child process channel in
-  `toylisp_core`.
-- `src/evaluators/test/`: development evaluator, currently for local transliteration
-  experiments. It is built into `toylisp_lookups` alongside the transliteration
-  code it uses.
-- `tests/`: Qt Test coverage, optional bracket benchmarks, and Lisp500 C tests/module.
+- `src/sanskrit/` contains the Qt-free Sanskrit API and transliteration, the
+  Qt backend, the Cologne and Dharmamitra adapters, and the Python dispatcher.
+- `src/evaluators/sanskrit/` contains ToyLisp's word and verse adapters.
+  `src/evaluators/test/` contains the development evaluator. They build into
+  `toylisp_sanskrit_evaluators`.
+- `src/processes/` contains the reusable QtCore JSON-line process channel.
+  The `sanskrit_qt` target builds it and the HTTP client under `src/lookups/`.
+- `tests/` contains Qt Test coverage, standalone Sanskrit tests, optional bracket
+  benchmarks and Lisp500 C tests with a native FASL module.
 - `resources/`: bundled SVG toolbar icons and Qt resource manifest.
 
 Use the repository's `.clang-format` for C++ changes. It was exported from CLion's

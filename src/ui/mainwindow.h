@@ -1,6 +1,7 @@
 #pragma once
 #include "evaluators/evaluator.h"
-#include "processes/jsonprocess.h"
+#include "sanskrit/sanskrit.h"
+#include "sanskrit/sanskritserviceqt.h"
 #include <QMainWindow>
 class Editor;
 class QTabWidget;
@@ -11,12 +12,14 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 public:
     MainWindow();
+    ~MainWindow() override;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
-    JsonProcess pythonWorker;
+    sanskrit::SanskritServiceQt sanskritService;
+    sanskrit::Sanskrit sanskrit{sanskritService};
     EvaluatorRegistry registry;
     QTabWidget *editors;
     QPlainTextEdit *output;
@@ -30,6 +33,7 @@ private:
     void closeTab(int index);
     void updateTitle(Editor *editor);
     void findReplace();
+    void cancelEvaluations();
     void updateEvaluationActivity();
     void choosePythonInterpreter();
 };

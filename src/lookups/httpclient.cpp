@@ -40,6 +40,7 @@ void HttpRequest::readAvailable(qint64 limit)
     if (done || !reply)
         return;
     if (response.body.size() + reply->bytesAvailable() > limit) {
+        response.limitExceeded = true;
         complete("Response exceeds the size limit");
         return;
     }
@@ -72,9 +73,11 @@ HttpClient::HttpClient(const HttpOptions &options)
 
 HttpRequest *HttpClient::get(const QUrl &url, QObject *parent)
 {
-    QNetworkRequest request(url);
-    request.setRawHeader("User-Agent", "ToyLisp/0.1 Sanskrit lookup");
-    request.setRawHeader("Accept", "application/json, text/html;q=0.9");
+    return get(QNetworkRequest(url), parent);
+}
+
+HttpRequest *HttpClient::get(QNetworkRequest request, QObject *parent)
+{
     request.setAttribute(
         QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto *reply = network.get(request);

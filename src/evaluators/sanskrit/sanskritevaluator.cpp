@@ -1,214 +1,234 @@
 #include "sanskritevaluator.h"
-#include "transliteration.h"
-#include <QUrlQuery>
+#include "sanskrit/sanskrit.h"
+#include <QMap>
+#include <QStringList>
 
-SanskritEvaluator::SanskritJob::SanskritJob(
-    HttpClient &http,
-    const SanskritEndpoints &endpoints,
-    SanskritLanguage language,
-    QObject *parent)
-    : EvaluationJob(parent)
-    , http(http)
-    , endpoints(endpoints)
-    , language(language)
-{
-    connect(this, &EvaluationJob::cancellationRequested, this, [this] {
-        for (auto *request : findChildren<HttpRequest *>())
-            request->cancel();
-    });
-}
+namespace {
+using namespace sanskrit;
 
-void SanskritEvaluator::SanskritJob::startWord(const QString &word)
+class SanskritEvaluationJob : public EvaluationJob
 {
-    headwords.append(word);
-    lookup(word);
-    QUrl url = endpoints.inflectedForms;
-    QUrlQuery query;
-    query.addQueryItem("word", word);
-    query.addQueryItem("transLit", "SLP2SLP");
-    query.addQueryItem("filter", "SLP2SLP");
-    url.setQuery(query);
-    auto *request = http.get(url, this);
-    connect(request, &HttpRequest::finished, this, [this, request] {
-        const auto response = request->result();
-        request->deleteLater();
-        morphologyDone = true;
-        if (!response.ok) {
-            errors.append("Inflected forms: " + response.error);
-        } else {
-            const auto parsed = parseInflectedForms(response.body);
-            if (!parsed.ok) {
-                errors.append("Inflected forms: " + parsed.error);
-            } else {
-                morphologyHeadwords = parsed.values;
-                for (const auto &headword : parsed.values) {
-                    if (!headwords.contains(headword)) {
-                        headwords.append(headword);
-                        lookup(headword);
-                    }
-                }
-            }
-        }
-        finishIfReady();
-    });
-}
-
-void SanskritEvaluator::SanskritJob::startHeadwords(const QList<SanskritHeadword> &lemmas)
-{
-    morphologyDone = true;
-    for (const auto &lemma : lemmas) {
-        headwords.append(lemma.slp1);
-        headwordLabels.insert(lemma.slp1, lemma.label);
-        lookup(lemma.slp1);
+public:
+    explicit SanskritEvaluationJob(QObject *parent)
+        : EvaluationJob(parent)
+    {
+        connect(this, &EvaluationJob::cancellationRequested, this, [this] { request.cancel(); });
     }
-    finishIfReady();
+
+    void setRequest(Request value) { request = std::move(value); }
+
+private:
+    Request request;
+};
+
+QString devanagari(const std::string &headword)
+{
+    return QString::fromStdString(
+        Sanskrit::transliterateWord(headword, Script::Slp1, Script::Devanagari).text);
 }
 
-QUrl SanskritEvaluator::SanskritJob::dictionaryUrl(
-    const QString &field, const QString &value, const QString &mode) const
+QString dictionaryName(Dictionary dictionary)
 {
-    const QString dictionary = language == SanskritLanguage::German ? "pwg" : "mw";
-    QUrl url = endpoints.dictionaries.resolved(QUrl(dictionary + "/restful/entries"));
-    QUrlQuery query;
-    query.addQueryItem("field", field);
-    query.addQueryItem("query", value);
-    query.addQueryItem("query_type", mode);
-    query.addQueryItem("size", "20");
-    url.setQuery(query);
-    return url;
+    return dictionary == Dictionary::Pwg ? "PWG" : "MW";
 }
 
-void SanskritEvaluator::SanskritJob::lookup(const QString &headword, bool subentry)
+QString diagnosticText(const Diagnostic &diagnostic, Dictionary dictionary)
 {
-    ++outstanding;
-    const QUrl url = dictionaryUrl(subentry ? "re_headwords_slp1" : "headword_slp1", headword);
-    auto *request = http.get(url, this);
-    connect(request, &HttpRequest::finished, this, [this, request, headword, subentry] {
-        const auto response = request->result();
-        request->deleteLater();
-        --outstanding;
-        const QString label = slp1ToDevanagari(headword) + " ("
-                              + (language == SanskritLanguage::German ? "PWG" : "MW") + "): ";
-        if (!response.ok) {
-            errors.append(label + response.error);
-        } else {
-            const auto parsed = subentry
-                                    ? parseSanskritSubentries(response.body, headword, language)
-                                    : parseSanskritDictionary(response.body, headword, language);
-            if (!parsed.ok)
-                errors.append(label + parsed.error);
-            meanings.insert(headword, parsed.values);
-            for (qint64 record : parsed.previousEntries)
-                lookupPrevious(headword, record, 0);
-            if (!subentry && language == SanskritLanguage::English && parsed.ok
-                && parsed.values.isEmpty())
-                lookup(headword, true);
-        }
-        finishIfReady();
-    });
-}
-
-void SanskritEvaluator::SanskritJob::lookupPrevious(
-    const QString &headword, qint64 record, int depth)
-{
-    const QString key = headword + ':' + QString::number(record);
-    if (requestedReferences.contains(key))
-        return;
-    const QString label = slp1ToDevanagari(headword) + " (PWG reference): ";
-    if (depth >= 4 || requestedReferences.size() >= 16) {
-        errors.append(label + "Dictionary reference limit reached");
-        return;
+    const auto message = QString::fromStdString(diagnostic.message);
+    switch (diagnostic.stage) {
+    case Stage::Morphology:
+        return "Inflected forms: " + message;
+    case Stage::Dictionary:
+        return devanagari(diagnostic.headwordSlp1) + " (" + dictionaryName(dictionary)
+               + "): " + message;
+    case Stage::Reference:
+        return devanagari(diagnostic.headwordSlp1) + " (PWG reference): " + message;
+    case Stage::Analysis:
+        if (diagnostic.issue == Issue::NotConfigured)
+            return "Set a Python interpreter under Sanskrit → Python Interpreter…";
+        return "Sanskrit verse analysis: " + message;
+    case Stage::Input:
+        return message;
     }
-    requestedReferences.insert(key);
-    ++outstanding;
-    // XML full-text search can also match citations. The parser accepts
-    // only the exact tail/L record, never an incidental occurrence.
-    auto *request = http.get(dictionaryUrl("xml", QString::number(record), "match"), this);
-    connect(request, &HttpRequest::finished, this, [this, request, headword, record, depth, label] {
-        const auto response = request->result();
-        request->deleteLater();
-        --outstanding;
-        if (!response.ok) {
-            errors.append(label + response.error);
-        } else {
-            const auto parsed = parseSanskritPreviousEntry(response.body, record);
-            if (!parsed.ok)
-                errors.append(label + parsed.error);
-            referenceMeanings[headword].insert(record, parsed.values);
-            for (qint64 previous : parsed.previousEntries)
-                lookupPrevious(headword, previous, depth + 1);
-        }
-        finishIfReady();
-    });
+    return message;
 }
 
-void SanskritEvaluator::SanskritJob::finishIfReady()
+void appendLookupDiagnostics(QStringList &lines, const DictionaryResult &result)
 {
-    if (!morphologyDone || outstanding || isCancelled())
-        return;
+    if (!result.diagnostics.empty()) {
+        lines.append("Lookup incomplete:");
+        for (const auto &diagnostic : result.diagnostics)
+            lines.append(diagnosticText(diagnostic, result.dictionary));
+    }
+}
+
+QString meaningText(const Meaning &meaning)
+{
+    auto text = QString::fromStdString(meaning.text);
+    if (meaning.sourceRecord)
+        text.prepend("wie " + devanagari(meaning.sourceHeadwordSlp1) + ": ");
+    return text;
+}
+
+Evaluation formatLookup(const DictionaryResult &result)
+{
+    if (!result.diagnostics.empty() && result.diagnostics.front().stage == Stage::Input)
+        return {false, diagnosticText(result.diagnostics.front(), result.dictionary)};
+
     QStringList lines;
-    for (const auto &headword : headwords) {
-        if (headwordLabels.contains(headword)) {
-            const auto glosses = meanings.value(headword);
-            QString gloss = glosses.mid(0, 2).join("; ");
-            if (glosses.size() > 2)
-                gloss += QString::fromUtf8(" …");
-            lines.append("  " + headwordLabels.value(headword) + ": "
-                         + (gloss.isEmpty() ? QString("No usable MW gloss") : gloss));
-            continue;
-        }
-        for (const auto &reference : referenceMeanings.value(headword)) {
-            for (const auto &meaning : reference)
-                lines.append(slp1ToDevanagari(headword) + QString::fromUtf8(" — ") + meaning);
-        }
-        for (const auto &meaning : meanings.value(headword))
-            lines.append(slp1ToDevanagari(headword) + QString::fromUtf8(" — ") + meaning);
+    for (const auto &entry : result.entries) {
+        for (const auto &meaning : entry.meanings)
+            lines.append(devanagari(entry.headwordSlp1) + " — " + meaningText(meaning));
     }
     const bool hasMeanings = !lines.isEmpty();
-    if (!hasMeanings && !morphologyHeadwords.isEmpty()) {
+    if (!hasMeanings && !result.baseFormsSlp1.empty()) {
         QStringList recognized;
-        for (const auto &headword : morphologyHeadwords)
-            recognized.append(slp1ToDevanagari(headword));
+        for (const auto &headword : result.baseFormsSlp1)
+            recognized.append(devanagari(headword));
         lines.append("Recognized base form(s): " + recognized.join(", "));
     }
-    if (!errors.isEmpty()) {
-        lines.append("Lookup incomplete:");
-        lines.append(errors);
+    if (!result.diagnostics.empty()) {
+        appendLookupDiagnostics(lines, result);
     } else if (!hasMeanings) {
-        if (morphologyHeadwords.isEmpty())
-            lines.append(
-                "No dictionary entry or supported base form found for "
-                + slp1ToDevanagari(headwords.value(0)));
-        else
-            lines.append(
-                QString("No dictionary meanings found in ")
-                + (language == SanskritLanguage::German ? "PWG" : "MW"));
+        if (result.baseFormsSlp1.empty()) {
+            const auto headword = result.entries.empty()
+                                      ? QString{}
+                                      : devanagari(result.entries.front().headwordSlp1);
+            lines.append("No dictionary entry or supported base form found for " + headword);
+        } else {
+            lines.append("No dictionary meanings found in " + dictionaryName(result.dictionary));
+        }
     }
-    finish({errors.isEmpty(), lines.join('\n')});
+    return {result.diagnostics.empty(), lines.join('\n')};
 }
 
-SanskritEvaluator::SanskritEvaluator(const SanskritEndpoints &endpoints, const HttpOptions &options)
-    : http(options)
-    , endpoints(endpoints)
+QString compactGrammar(const std::vector<GrammarFeature> &grammar)
+{
+    if (grammar.empty())
+        return "Unspecified";
+    static const QMap<QString, QString> abbreviations{
+        {"Nominative", "Nom"},
+        {"Vocative", "Voc"},
+        {"Accusative", "Acc"},
+        {"Instrumental", "Ins"},
+        {"Dative", "Dat"},
+        {"Ablative", "Abl"},
+        {"Genitive", "Gen"},
+        {"Locative", "Loc"},
+        {"Singular", "Sg"},
+        {"Dual", "Du"},
+        {"Plural", "Pl"},
+        {"Masculine", "m"},
+        {"Feminine", "f"},
+        {"Neuter", "n"},
+        {"First", "1p"},
+        {"Second", "2p"},
+        {"Third", "3p"}};
+    QMap<QString, QString> features;
+    QStringList extra;
+    for (const auto &feature : grammar) {
+        const auto name = QString::fromStdString(feature.name);
+        if (!feature.value) {
+            extra.append(name);
+            continue;
+        }
+        const auto value = QString::fromStdString(*feature.value);
+        if (abbreviations.contains(value))
+            features.insert(name, abbreviations.value(value));
+        else
+            extra.append(name + '=' + value);
+    }
+    QStringList parts;
+    for (const auto &key : {"Case", "Number", "Gender", "Person"}) {
+        const auto value = features.take(key);
+        if (!value.isEmpty())
+            parts.append(value);
+    }
+    parts += features.values();
+    const auto compact = parts.join('.');
+    if (extra.isEmpty())
+        return compact;
+    return compact.isEmpty() ? extra.join(", ") : compact + ", " + extra.join(", ");
+}
+
+Evaluation formatVerse(const AnalysisWithGlosses &result)
+{
+    const auto &analysis = result.analysis;
+    const auto &dictionary = result.dictionary;
+    QStringList lines;
+    if (analysis.words.empty()) {
+        for (const auto &diagnostic : analysis.diagnostics)
+            lines.append(diagnosticText(diagnostic, dictionary.dictionary));
+        return {false, lines.join('\n')};
+    }
+
+    QStringList pada;
+    QStringList grammar;
+    QMap<std::string, QString> labels;
+    for (const auto &word : analysis.words) {
+        pada.append(QString::fromStdString(word.formDevanagari));
+        const auto form = QString::fromStdString(word.formIast);
+        grammar.append(form + " (" + compactGrammar(word.grammar) + ")");
+        if (!labels.contains(word.lemmaSlp1)) {
+            const auto lemma = QString::fromStdString(word.lemmaIast);
+            const auto label = form == lemma ? lemma : lemma + " → " + form;
+            labels.insert(word.lemmaSlp1, devanagari(word.lemmaSlp1) + " (" + label + ")");
+        }
+    }
+    lines.append("Padapāṭha: " + pada.join(" | "));
+    lines.append("Grammatik: " + grammar.join(" | "));
+    if (!analysis.notice.empty())
+        lines.append("Dharmamitra: " + QString::fromStdString(analysis.notice));
+    for (const auto &diagnostic : analysis.diagnostics)
+        lines.append(diagnosticText(diagnostic, dictionary.dictionary));
+    lines.append("MW-Einträge:");
+    if (!result.wordsWithoutHeadwords.empty()) {
+        QStringList unavailable;
+        for (const auto index : result.wordsWithoutHeadwords)
+            unavailable.append(QString::fromStdString(analysis.words[index].formDevanagari));
+        unavailable.removeDuplicates();
+        lines.append("  No usable dictionary headword for: " + unavailable.join(", "));
+    }
+    for (const auto &entry : dictionary.entries) {
+        QStringList glosses;
+        for (std::size_t i = 0; i < entry.meanings.size() && i < 2; ++i)
+            glosses.append(meaningText(entry.meanings[i]));
+        auto gloss = glosses.join("; ");
+        if (entry.meanings.size() > 2)
+            gloss += " …";
+        lines.append(
+            "  " + labels.value(entry.headwordSlp1) + ": "
+            + (gloss.isEmpty() ? QString("No usable MW gloss") : gloss));
+    }
+    appendLookupDiagnostics(lines, dictionary);
+    return {analysis.diagnostics.empty() && dictionary.diagnostics.empty(), lines.join('\n')};
+}
+} // namespace
+
+SanskritEvaluator::SanskritEvaluator(Sanskrit &sanskrit)
+    : sanskrit(sanskrit)
 {}
 
 EvaluationJob *SanskritEvaluator::startEvaluation(const QString &input, QObject *parent)
 {
-    QString word, error;
-    if (!devanagariToSlp1(input, word, error)) {
-        auto *job = new EvaluationJob(parent);
-        job->finish({false, error});
-        return job;
-    }
-    auto *job = new SanskritJob(http, endpoints, language, parent);
-    job->startWord(word);
+    auto *job = new SanskritEvaluationJob(parent);
+    job->setRequest(
+        sanskrit.lookupDictionary(input.toStdString(), {dictionary}, [job](DictionaryResult result) {
+            job->finish(formatLookup(result));
+        }));
     return job;
 }
 
-EvaluationJob *SanskritEvaluator::startMonierWilliamsLookup(
-    const QList<SanskritHeadword> &lemmas, QObject *parent)
+SanskritVerseEvaluator::SanskritVerseEvaluator(Sanskrit &sanskrit)
+    : sanskrit(sanskrit)
+{}
+
+EvaluationJob *SanskritVerseEvaluator::startEvaluation(const QString &input, QObject *parent)
 {
-    auto *job = new SanskritJob(http, endpoints, SanskritLanguage::English, parent);
-    job->startHeadwords(lemmas);
+    auto *job = new SanskritEvaluationJob(parent);
+    job->setRequest(sanskrit.analyzeWithGlosses(
+        input.toStdString(), Script::Devanagari, Dictionary::Mw, [job](AnalysisWithGlosses result) {
+            job->finish(formatVerse(result));
+        }));
     return job;
 }

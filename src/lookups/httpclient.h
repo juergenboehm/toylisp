@@ -1,6 +1,7 @@
 #pragma once
 #include <QByteArray>
 #include <QNetworkAccessManager>
+#include <QNetworkRequest>
 #include <QPointer>
 #include <QTimer>
 #include <QUrl>
@@ -16,6 +17,7 @@ struct HttpResponse
     bool ok = false;
     QByteArray body;
     QString error;
+    bool limitExceeded = false;
 };
 class HttpRequest : public QObject
 {
@@ -41,6 +43,7 @@ class HttpClient
 public:
     explicit HttpClient(const HttpOptions &options = {});
     HttpRequest *get(const QUrl &url, QObject *parent);
+    HttpRequest *get(QNetworkRequest request, QObject *parent);
 
 private:
     QNetworkAccessManager network;

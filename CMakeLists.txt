@@ -8,26 +8,23 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets Network)
 add_library(toylisp_core
         src/evaluators/evaluator.cpp
-        src/evaluators/arith/arithmeticevaluator.cpp
-        src/processes/jsonprocess.cpp)
+        src/evaluators/arith/arithmeticevaluator.cpp)
 target_include_directories(toylisp_core PUBLIC src)
 target_link_libraries(toylisp_core PUBLIC Qt5::Core)
-add_library(toylisp_lookups
-        src/lookups/httpclient.cpp
-        src/evaluators/sanskrit/transliteration.cpp
-        src/evaluators/sanskrit/sanskritparser.cpp
+include(CTest)
+set(SANSKRIT_BUILD_QT_SERVICE ON)
+add_subdirectory(src/sanskrit)
+add_library(toylisp_sanskrit_evaluators
         src/evaluators/sanskrit/sanskritevaluator.cpp
-        src/evaluators/sanskritverse/sanskritverseevaluator.cpp
-        src/evaluators/test/testevaluator.cpp
-        resources/python.qrc)
-target_link_libraries(toylisp_lookups PUBLIC toylisp_core Qt5::Network)
+        src/evaluators/test/testevaluator.cpp)
+target_link_libraries(toylisp_sanskrit_evaluators PUBLIC toylisp_core sanskrit)
 add_library(toylisp_ui
         src/ui/editor.cpp
         src/ui/mainwindow.cpp
         src/editor/blocks.cpp
         src/editor/brackets.cpp
         resources/icons.qrc)
-target_link_libraries(toylisp_ui PUBLIC toylisp_lookups Qt5::Widgets)
+target_link_libraries(toylisp_ui PUBLIC toylisp_sanskrit_evaluators sanskrit_qt Qt5::Widgets)
 add_executable(toylisp src/app/main.cpp)
 target_link_libraries(toylisp PRIVATE toylisp_ui)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)

@@ -18,16 +18,14 @@ editor remains planned.
 - `src/evaluators/lisp500/`: unchanged `lisp500a.c` / `init500.lisp` originals and
   standalone `lisp500a64.c` / `init500_64.lisp` Linux LP64 ports; Qt integration
   remains planned.
-- `src/evaluators/sanskrit/`: Devanagari/SLP1 conversion, Cologne dictionary/inflection
-  adapters and asynchronous Sanskrit evaluator. Its private `SanskritJob` class is
-  declared in `sanskritevaluator.h` and implemented in `sanskritevaluator.cpp`.
-- `src/evaluators/sanskritverse/`: Dharmamitra verse evaluator and bundled Python
-  dispatcher.
-- `src/processes/`: QtCore asynchronous JSON-line child process channel.
-- `src/evaluators/test/`: development evaluator for local Devanagari/SLP1
-  transliteration experiments.
-- `src/lookups/`: reusable HTTP client (`httpclient.h` / `httpclient.cpp`).
-- `tests/`: Qt Test coverage plus Lisp500 C regressions and a native FASL fixture.
+- `src/sanskrit/` contains the reusable Sanskrit API, Qt backend, provider
+  adapters, transliteration, and bundled Python dispatcher.
+- `src/evaluators/sanskrit/` contains ToyLisp's word and verse evaluator adapters.
+- `src/processes/` contains the reusable QtCore JSON-line child process channel.
+- `src/evaluators/test/` contains the development evaluator for local transliteration.
+- `src/lookups/` contains the reusable HTTP client.
+- `tests/` contains Qt Test and Qt-free Sanskrit coverage, Lisp500 C regressions
+  and a native FASL fixture.
 - `resources/`: bundled toolbar SVG icons.
 - `README.md`: supported behavior, limitations, setup and commands.
 
@@ -38,6 +36,13 @@ Preserve user changes already present in the working tree.
 ## Build, run and test
 
 Require CMake 3.16+, C++17, Qt 5.12+ Widgets/Network and Qt Test for testing.
+Install the utf8proc development files and make the CMake package or
+`libutf8proc` pkg-config module discoverable. On Ubuntu use `libutf8proc-dev`
+and `pkg-config`. Include a custom installation prefix in `CMAKE_PREFIX_PATH`
+when applicable. Test the Qt-free target separately with
+`cmake -S src/sanskrit -B build/sanskrit-core -DBUILD_TESTING=ON`,
+`cmake --build build/sanskrit-core` and
+`ctest --test-dir build/sanskrit-core --output-on-failure`.
 The current machine has CMake 3.28.3 and GCC 13.3. Both build directories use
 Qt 5.15.13 built from the official source archives and installed independently
 under `/home/juergen/Qt/Qt5.15.13`, linked to system OpenSSL 3. Sources, build
@@ -152,13 +157,24 @@ of non-breaking spaces and soft line breaks, including marker boundaries within
 a text block. Keep shared evaluator infrastructure and arithmetic in the
 QtCore-only `toylisp_core`.
 
-`EvaluationJob` adds completion/cancellation while arithmetic remains immediate
-and keeps its shared environment. `toylisp_lookups` builds the reusable HTTP client
-from `src/lookups/` and the Sanskrit word, Sanskrit verse and Test evaluator code
-(QtCore + QtNetwork).
-The Test evaluator uses the shared transliteration for a local round trip via
-`==test`. These evaluators are registered once at application setup. Separate HTTP
-transport, provider parsing and editor behavior. Sanskrit uses `==sanskrit` and
+`EvaluationJob` handles editor completion and cancellation. Arithmetic completes
+immediately and keeps its shared environment. The standalone `sanskrit` target
+contains the Qt-free `Sanskrit` facade, the abstract `SanskritService` contract,
+and transliteration for Devanagari, IAST and SLP1. Use utf8proc privately for
+UTF-8 and normalization. Keep whole-text transliteration separate from strict
+word validation. Use typed results for meanings, provenance, grammar and
+diagnostics. Keep callbacks and cancellation on the service's serialized
+execution context. Retain the request handle until completion and cancel
+outstanding work before destroying the service.
+
+`sanskrit_qt` provides `SanskritServiceQt` using Qt Core/Network, the generic HTTP
+and JSON-line process transports and provider-specific adapters in `src/sanskrit/`.
+`toylisp_sanskrit_evaluators` builds the word, verse and Test adapters. They
+format library results and bind the handles to editor jobs. Register them once
+at application setup. The Test evaluator uses strict word transliteration for
+a local round trip via `==test`. Connected text translation remains planned.
+
+Sanskrit uses `==sanskrit` and
 one global, saved German PWG / English MW setting. Running jobs capture that
 language. Convert a single Devanagari word locally to SLP1; search both its exact
 form and distinct Cologne MW Inflected Forms headwords/roots. Prefix every

@@ -1,7 +1,6 @@
 #include "mainwindow.h"
 #include "editor.h"
 #include "evaluators/sanskrit/sanskritevaluator.h"
-#include "evaluators/sanskritverse/sanskritverseevaluator.h"
 #include "evaluators/test/testevaluator.h"
 #include <QAction>
 #include <QActionGroup>
@@ -62,11 +61,11 @@ MainWindow::MainWindow()
         if (auto *editor = currentEditor())
             editor->resetTextSize();
     });
-    auto sanskrit = std::make_unique<SanskritEvaluator>();
-    auto *sanskritEvaluator = sanskrit.get();
-    registry.addEvaluator("sanskrit", std::move(sanskrit));
+    auto wordEvaluator = std::make_unique<SanskritEvaluator>(sanskrit);
+    auto *sanskritEvaluator = wordEvaluator.get();
+    registry.addEvaluator("sanskrit", std::move(wordEvaluator));
     registry.addEvaluator(
-        "sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(pythonWorker, *sanskritEvaluator));
+        "sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(sanskrit));
     registry.addEvaluator("test", std::make_unique<TestEvaluator>());
 
     auto *sanskritMenu = menuBar()->addMenu("&Sanskrit");
@@ -87,11 +86,11 @@ MainWindow::MainWindow()
         const bool selected = code == savedLanguage || (german && savedLanguage != "en");
         action->setChecked(selected);
         if (selected)
-            sanskritEvaluator->setLanguage(
-                german ? SanskritLanguage::German : SanskritLanguage::English);
+            sanskritEvaluator->setDictionary(
+                german ? sanskrit::Dictionary::Pwg : sanskrit::Dictionary::Mw);
         connect(action, &QAction::triggered, this, [sanskritEvaluator, code, german] {
-            sanskritEvaluator->setLanguage(
-                german ? SanskritLanguage::German : SanskritLanguage::English);
+            sanskritEvaluator->setDictionary(
+                german ? sanskrit::Dictionary::Pwg : sanskrit::Dictionary::Mw);
             QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/resultLanguage", code);
         });
     }
@@ -160,10 +159,15 @@ MainWindow::MainWindow()
     lookupStatus->setObjectName("lookupStatus");
     statusBar()->addPermanentWidget(lookupStatus);
     addEditor();
-    const QString pythonError = configurePythonDispatcher(
-        pythonWorker, QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString());
+    const QString pythonError = sanskritService.setPythonInterpreter(
+        QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString());
     if (!pythonError.isEmpty())
         statusBar()->showMessage(pythonError);
+}
+
+MainWindow::~MainWindow()
+{
+    cancelEvaluations();
 }
 
 void MainWindow::choosePythonInterpreter()
@@ -188,7 +192,7 @@ void MainWindow::choosePythonInterpreter()
         QMessageBox::warning(this, "Python Interpreter", "Enter the absolute path to an executable.");
         return;
     }
-    const auto error = configurePythonDispatcher(pythonWorker, path);
+    const auto error = sanskritService.setPythonInterpreter(path);
     if (!error.isEmpty()) {
         QMessageBox::warning(this, "Python Interpreter", error);
         return;
@@ -293,11 +297,16 @@ void MainWindow::closeTab(int index)
     editors->removeTab(index);
     editor->deleteLater();
 }
+void MainWindow::cancelEvaluations()
+{
+    for (int i = 0; i < editors->count(); ++i)
+        qobject_cast<Editor *>(editors->widget(i))->cancelEvaluations();
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     // Modal save prompts process events; no lookup may dirty a tab already checked.
-    for (int i = 0; i < editors->count(); ++i)
-        qobject_cast<Editor *>(editors->widget(i))->cancelEvaluations();
+    cancelEvaluations();
     for (int i = 0; i < editors->count(); ++i) {
         if (!confirmClose(qobject_cast<Editor *>(editors->widget(i)))) {
             event->ignore();

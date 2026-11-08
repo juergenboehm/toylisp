@@ -1,4 +1,5 @@
 #include "sanskritparser.h"
+#include "sanskrit.h"
 #include "transliteration.h"
 #include <vector>
 #include <QJsonArray>
@@ -10,6 +11,7 @@
 #include <QUrlQuery>
 #include <QXmlStreamReader>
 
+namespace sanskrit::detail {
 namespace {
 struct TeiNode
 {
@@ -55,8 +57,15 @@ bool literaryCitation(const TeiNode &node)
 
 QString visibleText(const TeiNode &node, bool sanskrit = false)
 {
-    if (node.name.isEmpty())
-        return sanskrit ? slp1ToDevanagari(node.text) : node.text;
+    if (node.name.isEmpty()) {
+        if (!sanskrit)
+            return node.text;
+        // The dictionary's SLP1 accent codes do not affect the displayed base spelling.
+        auto text = node.text;
+        text.remove('/').remove('\\').remove('^');
+        return QString::fromStdString(
+            Sanskrit::transliterate(text.toStdString(), Script::Slp1, Script::Devanagari).text);
+    }
     if (node.name == "note" || node.name == "gramGrp" || node.name == "re" || literaryCitation(node)
         || (node.name == "ref" && node.attributes.value("type") == "facs"))
         return {};
@@ -164,30 +173,29 @@ QString germanGloss(const TeiNode &sense, bool &hasInlineSubsense)
 
 void collectGlosses(
     const TeiNode &sense,
-    SanskritLanguage language,
+    Dictionary dictionary,
     QStringList &glosses,
     bool &usesPrevious,
     bool allowPreviousDefinition = false)
 {
     if (allowPreviousDefinition && sense.attributes.value("n").isEmpty()
-        && language == SanskritLanguage::German && usesPreviousDefinition(sense)) {
+        && dictionary == Dictionary::Pwg && usesPreviousDefinition(sense)) {
         usesPrevious = true;
         return; // The following Sanskrit quotation illustrates the inherited definition.
     }
     bool hasInlineSubsense = false;
-    const QString gloss = language == SanskritLanguage::German
-                              ? germanGloss(sense, hasInlineSubsense)
-                              : englishGloss(sense);
+    const QString gloss = dictionary == Dictionary::Pwg ? germanGloss(sense, hasInlineSubsense)
+                                                        : englishGloss(sense);
     if (!gloss.isEmpty() && !glosses.contains(gloss))
         glosses.append(gloss);
-    if (language == SanskritLanguage::German && !gloss.isEmpty()) {
+    if (dictionary == Dictionary::Pwg && !gloss.isEmpty()) {
         // Later lettered siblings can complete the inline sub-sense group.
         // Other nested PWG material contains examples and derived forms.
         if (hasInlineSubsense) {
             for (const auto &child : sense.children) {
                 if (child.name == "sense" && child.attributes.value("ana") == "e"
                     && !isSenseLabel(child))
-                    collectGlosses(child, language, glosses, usesPrevious);
+                    collectGlosses(child, dictionary, glosses, usesPrevious);
             }
         }
         return;
@@ -205,7 +213,7 @@ void collectGlosses(
                 break;
             previousNumber = currentNumber;
         }
-        collectGlosses(child, language, glosses, usesPrevious);
+        collectGlosses(child, dictionary, glosses, usesPrevious);
     }
 }
 
@@ -280,7 +288,7 @@ LookupParseResult parseInflectedForms(const QByteArray &html)
         QString url = matches.next().captured(1);
         url.replace("&amp;", "&");
         const QString word = QUrlQuery(QUrl(url)).queryItemValue("key");
-        if (!isSlp1Word(word))
+        if (!isSlp1Word(word.toStdString()))
             return {false, {}, "Invalid headword in inflected-forms response"};
         if (!words.contains(word))
             words.append(word);
@@ -288,7 +296,7 @@ LookupParseResult parseInflectedForms(const QByteArray &html)
     if (words.isEmpty() && !summary.trimmed().isEmpty())
         return {false, {}, "Unexpected inflected-forms summary format"};
     if (words.size() > 16)
-        return {false, {}, "More than 16 possible base forms; narrow the input"};
+        return {false, {}, "More than 16 possible base forms; narrow the input", {}, {}, true};
     return {true, words, {}};
 }
 
@@ -298,7 +306,7 @@ enum class EntrySelection { Headword, Subentry, PreviousRecord };
 LookupParseResult parseDictionary(
     const QByteArray &json,
     const QString &headword,
-    SanskritLanguage language,
+    Dictionary dictionary,
     EntrySelection selection,
     qint64 expectedRecord = 0)
 {
@@ -311,15 +319,16 @@ LookupParseResult parseDictionary(
         return {false, {}, "Missing dictionary entries array"};
     const auto entries = data.toObject().value("entries").toArray();
     if (entries.size() >= 20)
-        return {false, {}, "Dictionary result limit reached; results may be incomplete"};
+        return {false, {}, "Dictionary result limit reached; results may be incomplete", {}, {}, true};
     QStringList glosses;
     QStringList errors;
     QList<qint64> previousEntries;
+    QString sourceHeadword;
     int matchingRecords = 0;
     for (const auto &value : entries) {
         const auto entry = value.toObject();
         const QString returnedHeadword = entry.value("headword_slp1").toString();
-        if (!value.isObject() || !isSlp1Word(returnedHeadword)
+        if (!value.isObject() || !isSlp1Word(returnedHeadword.toStdString())
             || (selection == EntrySelection::Headword && returnedHeadword != headword)
             || !entry.value("xml").isString()) {
             errors.append("Unexpected dictionary entry format");
@@ -359,6 +368,7 @@ LookupParseResult parseDictionary(
                     errors.append("No matching dictionary subentry");
             } else if (recordNumber(root) == expectedRecord) {
                 ++matchingRecords;
+                sourceHeadword = returnedHeadword;
                 selected.push_back(&root);
             }
         }
@@ -369,7 +379,7 @@ LookupParseResult parseDictionary(
         for (const auto *selectedEntry : selected) {
             for (const auto &child : selectedEntry->children) {
                 if (child.name == "sense")
-                    collectGlosses(child, language, entryGlosses, usesPrevious, true);
+                    collectGlosses(child, dictionary, entryGlosses, usesPrevious, true);
             }
         }
         if (usesPrevious) {
@@ -383,9 +393,7 @@ LookupParseResult parseDictionary(
             errors.append("No supported meaning structure in dictionary entry");
             continue;
         }
-        for (auto gloss : entryGlosses) {
-            if (selection == EntrySelection::PreviousRecord)
-                gloss = "wie " + slp1ToDevanagari(returnedHeadword) + ": " + gloss;
+        for (const auto &gloss : entryGlosses) {
             if (!glosses.contains(gloss))
                 glosses.append(gloss);
         }
@@ -397,29 +405,30 @@ LookupParseResult parseDictionary(
             errors.append("Ambiguous PWG record number");
             glosses.clear();
             previousEntries.clear();
+            sourceHeadword.clear();
         }
     }
     errors.removeDuplicates();
-    return {errors.isEmpty(), glosses, errors.join("; "), previousEntries};
+    return {errors.isEmpty(), glosses, errors.join("; "), previousEntries, sourceHeadword};
 }
 } // namespace
 
 LookupParseResult parseSanskritDictionary(
-    const QByteArray &json, const QString &headword, SanskritLanguage language)
+    const QByteArray &json, const QString &headword, Dictionary dictionary)
 {
-    return parseDictionary(json, headword, language, EntrySelection::Headword);
+    return parseDictionary(json, headword, dictionary, EntrySelection::Headword);
 }
 
 LookupParseResult parseSanskritSubentries(
-    const QByteArray &json, const QString &headword, SanskritLanguage language)
+    const QByteArray &json, const QString &headword, Dictionary dictionary)
 {
-    return parseDictionary(json, headword, language, EntrySelection::Subentry);
+    return parseDictionary(json, headword, dictionary, EntrySelection::Subentry);
 }
 
 LookupParseResult parseSanskritPreviousEntry(const QByteArray &json, qint64 expectedRecord)
 {
     if (expectedRecord <= 0)
         return {false, {}, "Invalid PWG record number"};
-    return parseDictionary(
-        json, {}, SanskritLanguage::German, EntrySelection::PreviousRecord, expectedRecord);
+    return parseDictionary(json, {}, Dictionary::Pwg, EntrySelection::PreviousRecord, expectedRecord);
 }
+} // namespace sanskrit::detail
