@@ -487,8 +487,9 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 - `src/evaluators/lisp500/`: standalone Lisp500 C/library originals and Linux LP64
   ports; Qt evaluator integration remains planned.
 - `src/evaluators/sanskrit/`: Sanskrit transliteration, provider adapters and
-  asynchronous evaluator. These and the HTTP client are built into
-  `toylisp_lookups` (QtCore + QtNetwork).
+  asynchronous evaluator. Its private `SanskritJob` class is declared in
+  `sanskritevaluator.h` and implemented in `sanskritevaluator.cpp`.
+  These and the HTTP client are built into `toylisp_lookups` (QtCore + QtNetwork).
 - `src/evaluators/sanskritverse/`: Dharmamitra verse evaluator and bundled
   Python dispatcher. The evaluator is built into `toylisp_lookups`.
 - `src/processes/`: reusable asynchronous JSON-line child process channel in

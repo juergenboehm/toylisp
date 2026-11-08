@@ -19,7 +19,8 @@ editor remains planned.
   standalone `lisp500a64.c` / `init500_64.lisp` Linux LP64 ports; Qt integration
   remains planned.
 - `src/evaluators/sanskrit/`: Devanagari/SLP1 conversion, Cologne dictionary/inflection
-  adapters and asynchronous Sanskrit evaluator.
+  adapters and asynchronous Sanskrit evaluator. Its private `SanskritJob` class is
+  declared in `sanskritevaluator.h` and implemented in `sanskritevaluator.cpp`.
 - `src/evaluators/sanskritverse/`: Dharmamitra verse evaluator and bundled Python
   dispatcher.
 - `src/processes/`: QtCore asynchronous JSON-line child process channel.

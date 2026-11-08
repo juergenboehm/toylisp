@@ -2,6 +2,10 @@
 #include "evaluators/evaluator.h"
 #include "lookups/httpclient.h"
 #include "sanskritparser.h"
+#include <QList>
+#include <QMap>
+#include <QSet>
+#include <QStringList>
 
 struct SanskritEndpoints
 {
@@ -27,7 +31,41 @@ public:
     EvaluationJob *startMonierWilliamsLookup(const QList<SanskritHeadword> &lemmas, QObject *parent);
 
 private:
+    class SanskritJob;
+
     HttpClient http;
     SanskritEndpoints endpoints;
     SanskritLanguage language = SanskritLanguage::German;
+};
+
+class SanskritEvaluator::SanskritJob : public EvaluationJob
+{
+public:
+    SanskritJob(
+        HttpClient &http,
+        const SanskritEndpoints &endpoints,
+        SanskritLanguage language,
+        QObject *parent);
+    void startWord(const QString &word);
+    void startHeadwords(const QList<SanskritHeadword> &lemmas);
+
+private:
+    QUrl dictionaryUrl(
+        const QString &field, const QString &value, const QString &mode = "term") const;
+    void lookup(const QString &headword, bool subentry = false);
+    void lookupPrevious(const QString &headword, qint64 record, int depth);
+    void finishIfReady();
+
+    HttpClient &http;
+    SanskritEndpoints endpoints;
+    SanskritLanguage language;
+    QStringList headwords;
+    QMap<QString, QString> headwordLabels;
+    QStringList morphologyHeadwords;
+    QMap<QString, QStringList> meanings;
+    QMap<QString, QMap<qint64, QStringList>> referenceMeanings;
+    QSet<QString> requestedReferences;
+    QStringList errors;
+    bool morphologyDone = false;
+    int outstanding = 0;
 };
