@@ -1,21 +1,14 @@
 #include "transliteration.h"
-#include "sanskrit.h"
+#include "transliteration_p.h"
 #include <cstdlib>
 #include <memory>
 #include <utf8proc.h>
 
 namespace sanskrit {
 namespace {
-enum class Kind { Vowel, Consonant, Mark };
-
-struct Letter
-{
-    Kind kind;
-    char slp1;
-    std::u32string_view iast;
-    char32_t devanagari;
-    char32_t vowelSign = 0;
-};
+using detail::Kind;
+using detail::Letter;
+using detail::Token;
 
 constexpr Letter letters[] = {
     {Kind::Vowel, 'a', U"a", U'अ'},       {Kind::Vowel, 'A', U"ā", U'आ', U'ा'},
@@ -25,6 +18,7 @@ constexpr Letter letters[] = {
     {Kind::Vowel, 'x', U"ḷ", U'ऌ', U'ॢ'},  {Kind::Vowel, 'X', U"ḹ", U'ॡ', U'ॣ'},
     {Kind::Vowel, 'e', U"e", U'ए', U'े'},  {Kind::Vowel, 'E', U"ai", U'ऐ', U'ै'},
     {Kind::Vowel, 'o', U"o", U'ओ', U'ो'}, {Kind::Vowel, 'O', U"au", U'औ', U'ौ'},
+
     {Kind::Consonant, 'k', U"k", U'क'},   {Kind::Consonant, 'K', U"kh", U'ख'},
     {Kind::Consonant, 'g', U"g", U'ग'},   {Kind::Consonant, 'G', U"gh", U'घ'},
     {Kind::Consonant, 'N', U"ṅ", U'ङ'},   {Kind::Consonant, 'c', U"c", U'च'},
@@ -41,17 +35,13 @@ constexpr Letter letters[] = {
     {Kind::Consonant, 'r', U"r", U'र'},   {Kind::Consonant, 'l', U"l", U'ल'},
     {Kind::Consonant, 'v', U"v", U'व'},   {Kind::Consonant, 'S', U"ś", U'श'},
     {Kind::Consonant, 'z', U"ṣ", U'ष'},   {Kind::Consonant, 's', U"s", U'स'},
-    {Kind::Consonant, 'h', U"h", U'ह'},   {Kind::Mark, 'M', U"ṃ", U'ं'},
-    {Kind::Mark, 'H', U"ḥ", U'ः'},        {Kind::Mark, '~', U"~", U'ँ'},
-    {Kind::Mark, '\'', U"'", U'ऽ'},
-};
-constexpr char32_t virama = U'्';
+    {Kind::Consonant, 'h', U"h", U'ह'},
 
-struct Token
-{
-    const Letter *letter;
-    char32_t literal = 0;
+    {Kind::Mark, 'M', U"ṃ", U'ं'},       {Kind::Mark, 'H', U"ḥ", U'ः'},
+    {Kind::Mark, '~', U"~", U'ँ'},       {Kind::Mark, '\'', U"'", U'ऽ'},
 };
+
+constexpr char32_t virama = U'्';
 
 const Letter *findSlp1(char32_t character)
 {
@@ -95,6 +85,7 @@ const Letter *inherentOrExplicitVowel(std::u32string_view input, std::size_t &po
             ++position;
         return nullptr;
     }
+
     if (next != U'\0') {
         for (const auto &letter : letters) {
             if (letter.vowelSign == next) {
@@ -105,8 +96,9 @@ const Letter *inherentOrExplicitVowel(std::u32string_view input, std::size_t &po
     }
     return &letters[0];
 }
+} // namespace
 
-std::vector<Token> tokenize(std::u32string_view input, Script script, bool wordOnly)
+std::vector<Token> detail::tokenize(std::u32string_view input, Script script, bool wordOnly)
 {
     std::vector<Token> tokens;
     for (std::size_t i = 0; i < input.size(); ++i) {
@@ -123,6 +115,7 @@ std::vector<Token> tokenize(std::u32string_view input, Script script, bool wordO
             letter = findSlp1(character);
             break;
         }
+
         // In Latin text an apostrophe between letters denotes avagraha.
         // Apostrophes at the edge of a word can instead be quotation marks.
         if (!wordOnly && script != Script::Devanagari && character == U'\'') {
@@ -137,10 +130,12 @@ std::vector<Token> tokenize(std::u32string_view input, Script script, bool wordO
         if (!wordOnly && script != Script::Devanagari && character == U'~'
             && (tokens.empty() || !tokens.back().letter))
             letter = nullptr;
+
         if (!letter) {
             tokens.push_back({nullptr, character});
             continue;
         }
+
         tokens.push_back({letter});
         if (script == Script::Devanagari && letter->kind == Kind::Consonant) {
             if (const auto *vowel = inherentOrExplicitVowel(input, i))
@@ -152,7 +147,7 @@ std::vector<Token> tokenize(std::u32string_view input, Script script, bool wordO
     return tokens;
 }
 
-std::string render(const std::vector<Token> &tokens, Script script)
+std::string detail::render(const std::vector<Token> &tokens, Script script)
 {
     std::u32string output;
     bool pendingConsonant = false;
@@ -177,12 +172,13 @@ std::string render(const std::vector<Token> &tokens, Script script)
             output += letter->slp1;
         }
     }
+
     if (pendingConsonant)
         output += virama;
     return detail::encode(output);
 }
 
-bool isWord(const std::vector<Token> &tokens, Script script)
+bool detail::isWord(const std::vector<Token> &tokens, Script script)
 {
     bool hasLetter = false;
     for (const auto &token : tokens) {
@@ -194,6 +190,7 @@ bool isWord(const std::vector<Token> &tokens, Script script)
     return hasLetter;
 }
 
+namespace {
 bool isSpace(char32_t character)
 {
     const auto category = utf8proc_category(character);
@@ -233,6 +230,7 @@ std::u32string normalizedText(std::string_view text, std::string &error)
 {
     if (text.empty())
         return {};
+
     utf8proc_uint8_t *buffer = nullptr;
     const auto length = utf8proc_map(
         reinterpret_cast<const utf8proc_uint8_t *>(text.data()),
@@ -244,6 +242,7 @@ std::u32string normalizedText(std::string_view text, std::string &error)
         error = utf8proc_errmsg(length);
         return {};
     }
+
     std::u32string result;
     for (utf8proc_ssize_t offset = 0; offset < length;) {
         utf8proc_int32_t character;
@@ -263,39 +262,4 @@ std::u32string_view trimmed(std::u32string_view text)
     return text;
 }
 } // namespace detail
-
-Transliteration Sanskrit::transliterate(std::string_view text, Script from, Script to)
-{
-    std::string error;
-    const auto input = detail::normalizedText(text, error);
-    if (!error.empty())
-        return {{}, std::move(error)};
-    if (from == to)
-        return {detail::encode(input), {}};
-    return {render(tokenize(input, from, false), to), {}};
-}
-
-Transliteration Sanskrit::transliterateWord(std::string_view word, Script from, Script to)
-{
-    std::string error;
-    const auto normalized = detail::normalizedText(word, error);
-    if (!error.empty())
-        return {{}, std::move(error)};
-    const auto input = detail::trimmed(normalized);
-    if (input.empty() || input.size() > 128) {
-        return {
-            {},
-            from == Script::Devanagari ? "Enter one Devanagari word (at most 128 characters)"
-                                       : "Enter one Sanskrit word (at most 128 characters)"};
-    }
-    const auto tokens = tokenize(input, from, true);
-    if (!isWord(tokens, from)) {
-        return {
-            {},
-            from == Script::Devanagari ? "Enter one Devanagari word; spaces, accents and "
-                                         "non-Sanskrit letters are unsupported"
-                                       : "Enter one Sanskrit word in the specified script"};
-    }
-    return {render(tokens, to), {}};
-}
 } // namespace sanskrit

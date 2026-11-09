@@ -9,30 +9,21 @@ namespace sanskrit {
 class [[nodiscard]] Request
 {
 public:
-    Request() = default;
-    explicit Request(std::function<void()> cancel)
-        : cancelAction(std::move(cancel))
-    {}
-    Request(const Request &) = delete;
-    Request &operator=(const Request &) = delete;
-    Request(Request &&other) noexcept
-        : cancelAction(std::exchange(other.cancelAction, {}))
-    {}
-    Request &operator=(Request &&other) noexcept
-    {
-        if (this != &other) {
-            cancel();
-            cancelAction = std::exchange(other.cancelAction, {});
-        }
-        return *this;
-    }
-    ~Request() { cancel(); }
+    Request() noexcept;
 
-    void cancel()
-    {
-        if (auto action = std::exchange(cancelAction, {}))
-            action();
-    }
+    explicit Request(std::function<void()> cancel);
+
+    Request(const Request &) = delete;
+
+    Request &operator=(const Request &) = delete;
+
+    Request(Request &&other) noexcept;
+
+    Request &operator=(Request &&other) noexcept;
+
+    ~Request();
+
+    void cancel();
 
 private:
     std::function<void()> cancelAction;
@@ -48,7 +39,7 @@ using Completion = std::function<void(Result)>;
 class SanskritService
 {
 public:
-    virtual ~SanskritService() = default;
+    virtual ~SanskritService();
 
     // Enqueue local completions on the same context as remote completions.
     virtual void post(std::function<void()> task) = 0;

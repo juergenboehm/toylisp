@@ -1,4 +1,5 @@
 #pragma once
+
 #include <functional>
 #include <optional>
 #include <QJsonObject>
@@ -16,11 +17,16 @@ public:
     using Completion = std::function<void(const QJsonObject &result, const QString &error)>;
 
     explicit JsonProcess(int requestTimeoutMs = 40000);
+
     ~JsonProcess() override;
-    bool isConfigured() const { return !program.isEmpty(); }
+
+    bool isConfigured() const;
+
     void configure(const QString &program, const QStringList &arguments);
+
     void call(
         const QString &method, const QJsonObject &params, QObject *context, Completion completion);
+
     void cancel(QObject *context);
 
 private:
@@ -45,8 +51,12 @@ private:
     std::optional<Request> active;
 
     void start();
+
     void sendNext();
+
     void readOutput();
+
     void readDiagnostics();
+
     void fail(const QString &error);
 };

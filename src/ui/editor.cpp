@@ -5,7 +5,6 @@
 #include <QFile>
 #include <QFontMetricsF>
 #include <QKeyEvent>
-#include <QPointer>
 #include <QSaveFile>
 #include <QSignalBlocker>
 #include <QTextBlock>
@@ -25,16 +24,6 @@ QString outputText(QTextDocument *document, const EvaluationBlock &block)
 }
 } // namespace
 
-struct Editor::PendingEvaluation
-{
-    QPointer<EvaluationJob> job;
-    QTextCursor marker;
-    QString input;
-    QString evaluator;
-    QString markerText;
-    QString output;
-};
-
 Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     : QPlainTextEdit(parent)
     , registry(registry)
@@ -49,6 +38,7 @@ Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     resetTextSize();
     setLineWrapMode(QPlainTextEdit::NoWrap);
     new BracketHighlighter(document());
+
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &Editor::scheduleBracketHighlight);
     connect(this, &QPlainTextEdit::textChanged, this, &Editor::scheduleBracketHighlight);
     connect(this, &QPlainTextEdit::textChanged, this, &Editor::discardChangedEvaluations);
@@ -58,6 +48,11 @@ Editor::~Editor()
 {
     const QSignalBlocker blocker(this);
     cancelEvaluations();
+}
+
+int Editor::activeEvaluationCount() const
+{
+    return pendingEvaluations.size();
 }
 
 void Editor::cancelEvaluations()
@@ -70,6 +65,7 @@ void Editor::cancelEvaluations()
             evaluation->job->deleteLater();
         }
     }
+
     if (!pending.isEmpty())
         emit evaluationActivityChanged();
 }
@@ -79,6 +75,7 @@ bool Editor::evaluationIsCurrent(const PendingEvaluation &pending) const
     const auto markerBlock = pending.marker.block();
     if (markerBlock.text() != pending.markerText)
         return false;
+
     const auto block = locateBlock(markerBlock);
     return block.valid && block.input == pending.input && block.evaluator == pending.evaluator
            && outputText(document(), block) == pending.output;
@@ -89,6 +86,7 @@ void Editor::discardChangedEvaluations()
     if (evaluationOutputChanging)
         return;
     const auto pending = pendingEvaluations;
+
     bool changed = false;
     for (const auto &evaluation : pending) {
         if (!evaluationIsCurrent(*evaluation)) {
@@ -100,6 +98,7 @@ void Editor::discardChangedEvaluations()
             changed = true;
         }
     }
+
     if (changed)
         emit evaluationActivityChanged();
 }
@@ -108,11 +107,13 @@ void Editor::completeEvaluation(const std::shared_ptr<PendingEvaluation> &pendin
 {
     if (!pendingEvaluations.removeOne(pending))
         return;
+
     auto *job = pending->job.data();
     if (job && !job->isCancelled() && evaluationIsCurrent(*pending)) {
         const auto result = job->result();
         const auto block = locateBlock(pending->marker.block());
         QTextCursor cursor(document());
+
         evaluationOutputChanging = true;
         cursor.beginEditBlock();
         cursor.setPosition(block.insertion);
@@ -120,16 +121,19 @@ void Editor::completeEvaluation(const std::shared_ptr<PendingEvaluation> &pendin
         cursor.insertText("\n" + result.text + (result.text.isEmpty() ? "" : "\n") + "##");
         cursor.endEditBlock();
         evaluationOutputChanging = false;
+
         if (immediate)
             setTextCursor(cursor);
         if (!result.ok)
             emit diagnostic(result.text);
     }
+
     if (job)
         job->deleteLater();
     discardChangedEvaluations();
     emit evaluationActivityChanged();
 }
+
 bool Editor::load(const QString &path, QString &error)
 {
     QFile file(path);
@@ -137,11 +141,13 @@ bool Editor::load(const QString &path, QString &error)
         error = file.errorString();
         return false;
     }
+
     QByteArray data = file.readAll();
     if (file.error() != QFileDevice::NoError) {
         error = file.errorString();
         return false;
     }
+
     QTextCodec::ConverterState state;
     QString text
         = QTextCodec::codecForName("UTF-8")->toUnicode(data.constData(), data.size(), &state);
@@ -149,13 +155,16 @@ bool Editor::load(const QString &path, QString &error)
         error = "The file is not valid UTF-8.";
         return false;
     }
+
     crlf = data.contains("\r\n");
     text.replace("\r\n", "\n");
     setPlainText(text);
+
     filePath = path;
     document()->setModified(false);
     return true;
 }
+
 bool Editor::save(const QString &path, QString &error)
 {
     QSaveFile file(path);
@@ -163,9 +172,11 @@ bool Editor::save(const QString &path, QString &error)
         error = file.errorString();
         return false;
     }
+
     QString text = toPlainText();
     if (crlf)
         text.replace("\n", "\r\n");
+
     QByteArray data = text.toUtf8();
     if (file.write(data) != data.size()) {
         error = file.errorString();
@@ -175,10 +186,12 @@ bool Editor::save(const QString &path, QString &error)
         error = file.errorString();
         return false;
     }
+
     filePath = path;
     document()->setModified(false);
     return true;
 }
+
 void Editor::keyPressEvent(QKeyEvent *event)
 {
     auto cursor = textCursor();
@@ -190,6 +203,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
             emit diagnostic(block.error);
             return;
         }
+
         // Re-evaluation supersedes the previous request for this marker only.
         const auto previous = pendingEvaluations;
         for (const auto &pending : previous) {
@@ -201,6 +215,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
                 }
             }
         }
+
         auto pending = std::make_shared<PendingEvaluation>();
         pending->marker = QTextCursor(cursor.block());
         pending->marker.setKeepPositionOnInsert(true);
@@ -208,19 +223,23 @@ void Editor::keyPressEvent(QKeyEvent *event)
         pending->input = block.input;
         pending->evaluator = block.evaluator;
         pending->output = outputText(document(), block);
+
         pending->job = registry.startEvaluation(block.evaluator, block.input, this);
         pendingEvaluations.append(pending);
         connect(pending->job, &EvaluationJob::completed, this, [this, pending] {
             completeEvaluation(pending, false);
         });
+
         if (pending->job->isFinished())
             completeEvaluation(pending, true);
         else
             emit evaluationActivityChanged();
         return;
     }
+
     QPlainTextEdit::keyPressEvent(event);
 }
+
 void Editor::wheelEvent(QWheelEvent *event)
 {
     if (event->modifiers() != Qt::ControlModifier) {
@@ -236,10 +255,12 @@ void Editor::wheelEvent(QWheelEvent *event)
         setTextPointSize(font().pointSizeF() * std::pow(1.05, steps));
     event->accept();
 }
+
 void Editor::resetTextSize()
 {
     setTextPointSize(normalTextPointSize);
 }
+
 void Editor::setTextPointSize(qreal pointSize)
 {
     auto editorFont = font();
@@ -247,11 +268,13 @@ void Editor::setTextPointSize(qreal pointSize)
     setFont(editorFont);
     setTabStopDistance(QFontMetricsF(editorFont).horizontalAdvance(' ') * 4);
 }
+
 void Editor::scheduleBracketHighlight()
 {
     if (bracketHighlightPending)
         return;
     bracketHighlightPending = true;
+
     // Cursor signals can arrive during an edit, before all block data is updated.
     // Coalesce them with textChanged and read the metadata after the edit finishes.
     QTimer::singleShot(0, this, [this] {
@@ -268,6 +291,7 @@ void Editor::highlightBrackets()
         for (int index : {match.position, match.partner}) {
             if (index < 0)
                 continue;
+
             QTextEdit::ExtraSelection selection;
             selection.cursor = textCursor();
             selection.cursor.setPosition(index);
@@ -278,5 +302,6 @@ void Editor::highlightBrackets()
             selections.append(selection);
         }
     }
+
     setExtraSelections(selections);
 }

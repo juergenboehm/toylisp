@@ -1,5 +1,7 @@
 #include "sanskrit.h"
+#include "sanskrit_p.h"
 #include "transliteration.h"
+#include "transliteration_p.h"
 #include <memory>
 #include <unordered_set>
 
@@ -31,14 +33,50 @@ Request invalidLookup(
     result.diagnostics.push_back({Stage::Input, Issue::InvalidInput, std::move(error), {}});
     return deliverLater(service, std::move(completion), std::move(result));
 }
-
-struct GlossRequest
-{
-    Request stage;
-    AnalysisWithGlosses result;
-    Completion<AnalysisWithGlosses> completion;
-};
 } // namespace
+
+Sanskrit::Sanskrit(SanskritService &service)
+    : service(service)
+{}
+
+Transliteration Sanskrit::transliterate(std::string_view text, Script from, Script to)
+{
+    std::string error;
+    const auto input = detail::normalizedText(text, error);
+    if (!error.empty())
+        return {{}, std::move(error)};
+
+    if (from == to)
+        return {detail::encode(input), {}};
+    return {detail::render(detail::tokenize(input, from, false), to), {}};
+}
+
+Transliteration Sanskrit::transliterateWord(std::string_view word, Script from, Script to)
+{
+    std::string error;
+    const auto normalized = detail::normalizedText(word, error);
+    if (!error.empty())
+        return {{}, std::move(error)};
+
+    const auto input = detail::trimmed(normalized);
+    if (input.empty() || input.size() > 128) {
+        return {
+            {},
+            from == Script::Devanagari ? "Enter one Devanagari word (at most 128 characters)"
+                                       : "Enter one Sanskrit word (at most 128 characters)"};
+    }
+
+    const auto tokens = detail::tokenize(input, from, true);
+    if (!detail::isWord(tokens, from)) {
+        return {
+            {},
+            from == Script::Devanagari ? "Enter one Devanagari word; spaces, accents and "
+                                         "non-Sanskrit letters are unsupported"
+                                       : "Enter one Sanskrit word in the specified script"};
+    }
+
+    return {detail::render(tokens, to), {}};
+}
 
 Request Sanskrit::lookupDictionary(
     std::string_view word, LookupOptions options, Completion<DictionaryResult> completion) const
@@ -83,6 +121,7 @@ Request Sanskrit::analyze(std::string_view text, Script script, Completion<Analy
 {
     std::string error;
     const auto normalized = detail::normalizedText(text, error);
+
     const auto input = detail::trimmed(normalized);
     // Preserve the existing input limit in UTF-16 code units, also for non-BMP text.
     std::size_t length = 0;
@@ -95,6 +134,7 @@ Request Sanskrit::analyze(std::string_view text, Script script, Completion<Analy
         result.diagnostics.push_back({Stage::Input, Issue::InvalidInput, std::move(error), {}});
         return deliverLater(service, std::move(completion), std::move(result));
     }
+
     return service.analyze(detail::encode(input), script, std::move(completion));
 }
 
@@ -104,10 +144,10 @@ Request Sanskrit::analyzeWithGlosses(
     Dictionary dictionary,
     Completion<AnalysisWithGlosses> completion) const
 {
-    auto request = std::make_shared<GlossRequest>();
+    auto request = std::make_shared<detail::GlossRequest>();
     request->result.dictionary.dictionary = dictionary;
     request->completion = std::move(completion);
-    const std::weak_ptr<GlossRequest> pending = request;
+    const std::weak_ptr<detail::GlossRequest> pending = request;
     request->stage
         = analyze(text, script, [pending, backend = &service, dictionary](Analysis analysis) {
               const auto active = pending.lock();

@@ -15,7 +15,7 @@ else()
     set(sanskrit_unicode PkgConfig::SANSKRIT_UTF8PROC)
 endif()
 
-add_library(sanskrit sanskrit.cpp transliteration.cpp)
+add_library(sanskrit sanskrit.cpp sanskritservice.cpp transliteration.cpp)
 target_include_directories(sanskrit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_features(sanskrit PUBLIC cxx_std_17)
 target_link_libraries(sanskrit PRIVATE ${sanskrit_unicode})

@@ -30,27 +30,32 @@ MainWindow::MainWindow()
     Q_INIT_RESOURCE(icons);
     setWindowTitle("ToyLisp");
     resize(1100, 760);
+
     auto *vertical = new QSplitter(Qt::Vertical, this);
     auto *horizontal = new QSplitter(Qt::Horizontal, vertical);
     editors = new QTabWidget(horizontal);
     editors->setTabsClosable(true);
     editors->setMovable(true);
     editors->setDocumentMode(true);
+
     auto *auxiliary = new QTabWidget(horizontal);
     auto *placeholder = new QLabel("Auxiliary views", auxiliary);
     placeholder->setAlignment(Qt::AlignCenter);
     auxiliary->addTab(placeholder, "Tools");
+
     auto *bottom = new QTabWidget(vertical);
     output = new QPlainTextEdit(bottom);
     output->setReadOnly(true);
     output->setMaximumBlockCount(2000);
     bottom->addTab(output, "Output");
+
     horizontal->setSizes({850, 250});
     vertical->setSizes({550, 150});
     horizontal->setStretchFactor(0, 1);
     vertical->setStretchFactor(0, 1);
     setCentralWidget(vertical);
     connect(editors, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
+
     auto *file = menuBar()->addMenu("&File");
     auto *edit = menuBar()->addMenu("&Edit");
     auto *view = menuBar()->addMenu("&View");
@@ -72,6 +77,7 @@ MainWindow::MainWindow()
     auto *python = sanskritMenu->addAction("&Python Interpreter…");
     python->setObjectName("pythonInterpreterAction");
     connect(python, &QAction::triggered, this, &MainWindow::choosePythonInterpreter);
+
     auto *languages = sanskritMenu->addMenu("Result &Language");
     auto *languageGroup = new QActionGroup(this);
     const QString savedLanguage
@@ -94,6 +100,7 @@ MainWindow::MainWindow()
             QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/resultLanguage", code);
         });
     }
+
     auto *cancelLookup = sanskritMenu->addAction("&Cancel Pending Evaluations in This Tab");
     cancelLookup->setObjectName("cancelEvaluationsAction");
     cancelLookup->setShortcut(QKeySequence(Qt::Key_Escape));
@@ -101,6 +108,7 @@ MainWindow::MainWindow()
         if (auto *editor = currentEditor())
             editor->cancelEvaluations();
     });
+
     auto *toolbar = addToolBar("File");
     toolbar->setObjectName("fileToolbar");
     auto addFileAction = [&](QString title, QString icon, QKeySequence key, auto function) {
@@ -114,6 +122,7 @@ MainWindow::MainWindow()
     addFileAction("&Save", ":/icons/save.svg", QKeySequence::Save, [this] {
         saveEditor(currentEditor());
     });
+
     auto *saveAs = file->addAction("Save &As…");
     saveAs->setShortcut(QKeySequence::SaveAs);
     connect(saveAs, &QAction::triggered, this, [this] { saveEditor(currentEditor(), true); });
@@ -124,6 +133,7 @@ MainWindow::MainWindow()
     auto *quit = file->addAction("&Quit");
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
+
     auto addEditAction = [&](QString title, QKeySequence key, auto function) {
         auto *action = edit->addAction(title);
         action->setShortcut(key);
@@ -139,9 +149,11 @@ MainWindow::MainWindow()
     addEditAction("&Copy", QKeySequence::Copy, &Editor::copy);
     addEditAction("&Paste", QKeySequence::Paste, &Editor::paste);
     addEditAction("Select &All", QKeySequence::SelectAll, &Editor::selectAll);
+
     auto *find = edit->addAction("&Find / Replace…");
     find->setShortcuts({QKeySequence::Find, QKeySequence::Replace});
     connect(find, &QAction::triggered, this, &MainWindow::findReplace);
+
     toolbar->addSeparator();
     toolbar->addWidget(new QLabel(" Default evaluator: ", toolbar));
     auto *selector = new QComboBox(toolbar);
@@ -154,11 +166,13 @@ MainWindow::MainWindow()
     connect(selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, selector] {
         registry.defaultName = selector->currentData().toString();
     });
+
     statusBar()->showMessage("Ready — enter >>, input, then == and Return to evaluate");
     lookupStatus = new QLabel(this);
     lookupStatus->setObjectName("lookupStatus");
     statusBar()->addPermanentWidget(lookupStatus);
     addEditor();
+
     const QString pythonError = sanskritService.setPythonInterpreter(
         QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString());
     if (!pythonError.isEmpty())
@@ -184,6 +198,7 @@ void MainWindow::choosePythonInterpreter()
               .trimmed();
     if (!accepted)
         return;
+
     if (path.startsWith("~/"))
         path.replace(0, 1, QDir::homePath());
     const QFileInfo executable(path);
@@ -192,6 +207,7 @@ void MainWindow::choosePythonInterpreter()
         QMessageBox::warning(this, "Python Interpreter", "Enter the absolute path to an executable.");
         return;
     }
+
     const auto error = sanskritService.setPythonInterpreter(path);
     if (!error.isEmpty()) {
         QMessageBox::warning(this, "Python Interpreter", error);
@@ -199,16 +215,19 @@ void MainWindow::choosePythonInterpreter()
     }
     settings.setValue(key, path);
 }
+
 Editor *MainWindow::currentEditor() const
 {
     return qobject_cast<Editor *>(editors->currentWidget());
 }
+
 Editor *MainWindow::addEditor()
 {
     auto *editor = new Editor(registry, editors);
     editor->setProperty("untitledName", QString("Untitled %1").arg(++untitledCount));
     editors->addTab(editor, editor->property("untitledName").toString());
     editors->setCurrentWidget(editor);
+
     connect(editor->document(), &QTextDocument::modificationChanged, this, [this, editor] {
         updateTitle(editor);
     });
@@ -217,9 +236,11 @@ Editor *MainWindow::addEditor()
         statusBar()->showMessage(message, 10000);
     });
     connect(editor, &Editor::evaluationActivityChanged, this, &MainWindow::updateEvaluationActivity);
+
     editor->setFocus();
     return editor;
 }
+
 void MainWindow::updateEvaluationActivity()
 {
     int count = 0;
@@ -227,19 +248,23 @@ void MainWindow::updateEvaluationActivity()
         count += qobject_cast<Editor *>(editors->widget(i))->activeEvaluationCount();
     lookupStatus->setText(count ? QString("Pending lookups: %1").arg(count) : QString());
 }
+
 void MainWindow::updateTitle(Editor *editor)
 {
     int index = editors->indexOf(editor);
     QString name = editor->filePath.isEmpty() ? editor->property("untitledName").toString()
                                               : QFileInfo(editor->filePath).fileName();
+
     editors->setTabText(index, name + (editor->document()->isModified() ? " *" : ""));
     editors->setTabToolTip(index, editor->filePath);
 }
+
 void MainWindow::openFile()
 {
     QString path = QFileDialog::getOpenFileName(this, "Open text file");
     if (path.isEmpty())
         return;
+
     for (int i = 0; i < editors->count(); ++i) {
         auto *editor = qobject_cast<Editor *>(editors->widget(i));
         if (QFileInfo(editor->filePath).canonicalFilePath() == QFileInfo(path).canonicalFilePath()) {
@@ -247,7 +272,9 @@ void MainWindow::openFile()
             return;
         }
     }
+
     auto *editor = addEditor();
+
     QString error;
     if (!editor->load(path, error)) {
         QMessageBox::warning(this, "Open failed", error);
@@ -257,6 +284,7 @@ void MainWindow::openFile()
     }
     updateTitle(editor);
 }
+
 bool MainWindow::saveEditor(Editor *editor, bool saveAs)
 {
     if (!editor)
@@ -266,6 +294,7 @@ bool MainWindow::saveEditor(Editor *editor, bool saveAs)
         path = QFileDialog::getSaveFileName(this, "Save text file", path);
     if (path.isEmpty())
         return false;
+
     QString error;
     if (!editor->save(path, error)) {
         QMessageBox::warning(this, "Save failed", error);
@@ -274,10 +303,12 @@ bool MainWindow::saveEditor(Editor *editor, bool saveAs)
     updateTitle(editor);
     return true;
 }
+
 bool MainWindow::confirmClose(Editor *editor)
 {
     if (!editor || !editor->document()->isModified())
         return true;
+
     auto answer = QMessageBox::question(
         this,
         "Unsaved changes",
@@ -288,15 +319,18 @@ bool MainWindow::confirmClose(Editor *editor)
         return false;
     return answer == QMessageBox::Discard || saveEditor(editor);
 }
+
 void MainWindow::closeTab(int index)
 {
     auto *editor = qobject_cast<Editor *>(editors->widget(index));
     if (!editor || !confirmClose(editor))
         return;
+
     editor->cancelEvaluations();
     editors->removeTab(index);
     editor->deleteLater();
 }
+
 void MainWindow::cancelEvaluations()
 {
     for (int i = 0; i < editors->count(); ++i)
@@ -307,19 +341,23 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     // Modal save prompts process events; no lookup may dirty a tab already checked.
     cancelEvaluations();
+
     for (int i = 0; i < editors->count(); ++i) {
         if (!confirmClose(qobject_cast<Editor *>(editors->widget(i)))) {
             event->ignore();
             return;
         }
     }
+
     event->accept();
 }
+
 void MainWindow::findReplace()
 {
     auto *editor = currentEditor();
     if (!editor)
         return;
+
     QDialog dialog(this);
     dialog.setWindowTitle("Find / Replace");
     auto *layout = new QFormLayout(&dialog);
@@ -331,6 +369,7 @@ void MainWindow::findReplace()
     layout->addRow(&next, &replace);
     layout->addRow(&all);
     layout->addRow(&feedback);
+
     auto findNext = [&] {
         if (search.text().isEmpty())
             return;
@@ -344,16 +383,20 @@ void MainWindow::findReplace()
         }
         feedback.setText(found ? "Match selected" : "No match");
     };
+
     connect(&next, &QPushButton::clicked, &dialog, findNext);
+
     connect(&replace, &QPushButton::clicked, &dialog, [&] {
         auto cursor = editor->textCursor();
         if (!search.text().isEmpty() && cursor.selectedText() == search.text())
             cursor.insertText(replacement.text());
         findNext();
     });
+
     connect(&all, &QPushButton::clicked, &dialog, [&] {
         if (search.text().isEmpty())
             return;
+
         auto group = editor->textCursor();
         group.beginEditBlock();
         QTextCursor cursor(editor->document());
@@ -366,8 +409,10 @@ void MainWindow::findReplace()
             cursor.insertText(replacement.text());
             ++count;
         }
+
         group.endEditBlock();
         feedback.setText(QString("Replaced %1 occurrences").arg(count));
     });
+
     dialog.exec();
 }

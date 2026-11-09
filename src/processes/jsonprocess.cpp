@@ -29,6 +29,11 @@ JsonProcess::~JsonProcess()
     }
 }
 
+bool JsonProcess::isConfigured() const
+{
+    return !program.isEmpty();
+}
+
 void JsonProcess::configure(const QString &newProgram, const QStringList &newArguments)
 {
     if (program == newProgram && arguments == newArguments)
@@ -43,6 +48,7 @@ void JsonProcess::start()
 {
     if (process || !isConfigured())
         return;
+
     auto *child = new QProcess(this);
     process = child;
     connect(child, &QProcess::readyReadStandardOutput, this, &JsonProcess::readOutput);
@@ -56,6 +62,7 @@ void JsonProcess::start()
                 readDiagnostics();
                 fail(QString("Process exited (code %1)").arg(code));
             });
+
     timer.start(startupTimeoutMs);
     child->start(program, arguments);
 }
@@ -67,10 +74,12 @@ void JsonProcess::call(
         completion({}, "Process executable is not configured");
         return;
     }
+
     if (waiting.size() >= maxQueuedRequests) {
         completion({}, "Process request queue is full");
         return;
     }
+
     const QString id = QString::number(++lastId);
     const QJsonObject message{{"id", id}, {"method", method}, {"params", params}};
     QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
@@ -78,6 +87,7 @@ void JsonProcess::call(
         completion({}, "Process request exceeds the size limit");
         return;
     }
+
     waiting.enqueue({id, std::move(line), context, std::move(completion)});
     start();
     sendNext();
@@ -101,6 +111,7 @@ void JsonProcess::sendNext()
         waiting.dequeue();
     if (waiting.isEmpty())
         return;
+
     active = waiting.dequeue();
     const QByteArray line = active->line;
     timer.start(requestTimeoutMs);
@@ -119,6 +130,7 @@ void JsonProcess::readOutput()
         }
         if (end < 0)
             return;
+
         const QJsonObject message = QJsonDocument::fromJson(stdoutBuffer.left(end)).object();
         stdoutBuffer.remove(0, end + 1);
         if (!ready && message.value("ready") == QJsonValue(1)) {
@@ -127,6 +139,7 @@ void JsonProcess::readOutput()
             sendNext();
             continue;
         }
+
         const auto result = message.value("result");
         const auto error = message.value("error");
         const bool success = result.isObject() && error.isUndefined();
@@ -135,6 +148,7 @@ void JsonProcess::readOutput()
             fail("Invalid process response");
             return;
         }
+
         timer.stop();
         auto request = std::move(*active);
         active.reset();
@@ -154,8 +168,10 @@ void JsonProcess::fail(const QString &error)
     timer.stop();
     ready = false;
     stdoutBuffer.clear();
+
     const QString diagnostics = QString::fromUtf8(stderrTail).trimmed();
     stderrTail.clear();
+
     if (auto *child = process) {
         process = nullptr;
         child->disconnect(this);
@@ -171,12 +187,14 @@ void JsonProcess::fail(const QString &error)
             child->kill();
         }
     }
+
     auto requests = std::move(waiting);
     waiting.clear();
     if (active) {
         requests.prepend(std::move(*active));
         active.reset();
     }
+
     const QString message = diagnostics.isEmpty() ? error : error + "\n" + diagnostics;
     for (const auto &request : requests) {
         if (request.context)

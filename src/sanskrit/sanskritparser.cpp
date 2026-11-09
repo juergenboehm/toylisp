@@ -1,11 +1,11 @@
 #include "sanskritparser.h"
+#include "sanskritparser_p.h"
 #include "sanskrit.h"
 #include "transliteration.h"
 #include <vector>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QMap>
 #include <QRegularExpression>
 #include <QUrl>
 #include <QUrlQuery>
@@ -13,14 +13,6 @@
 
 namespace sanskrit::detail {
 namespace {
-struct TeiNode
-{
-    QString name;
-    QString text;
-    QMap<QString, QString> attributes;
-    std::vector<TeiNode> children;
-};
-
 TeiNode readNode(QXmlStreamReader &xml, int depth, int &remainingNodes)
 {
     TeiNode node;
@@ -28,9 +20,11 @@ TeiNode readNode(QXmlStreamReader &xml, int depth, int &remainingNodes)
         xml.raiseError("XML structure exceeds the size limit");
         return node;
     }
+
     node.name = xml.name().toString();
     for (const auto &attribute : xml.attributes())
         node.attributes.insert(attribute.qualifiedName().toString(), attribute.value().toString());
+
     while (!xml.atEnd()) {
         xml.readNext();
         if (xml.isStartElement()) {
@@ -97,6 +91,7 @@ QString englishGloss(const TeiNode &sense)
             break;
         }
     }
+
     QString text;
     int brackets = 0;
     bool skipLeadingBrackets = false;
@@ -104,6 +99,7 @@ QString englishGloss(const TeiNode &sense)
         const auto &child = sense.children[i];
         if (child.name == "sense" || child.name == "re")
             break;
+
         const QString unit = child.attributes.value("unit");
         if (child.name == "pc" && (unit.endsWith("-left") || unit.endsWith("-right"))) {
             if (unit.endsWith("-left")) {
@@ -118,12 +114,14 @@ QString englishGloss(const TeiNode &sense)
                 }
             }
         }
+
         if (skipLeadingBrackets)
             continue;
         if (literaryCitation(child) && brackets == 0 && !text.trimmed().isEmpty())
             break;
         text += visibleText(child);
     }
+
     return text.simplified();
 }
 
@@ -183,11 +181,13 @@ void collectGlosses(
         usesPrevious = true;
         return; // The following Sanskrit quotation illustrates the inherited definition.
     }
+
     bool hasInlineSubsense = false;
     const QString gloss = dictionary == Dictionary::Pwg ? germanGloss(sense, hasInlineSubsense)
                                                         : englishGloss(sense);
     if (!gloss.isEmpty() && !glosses.contains(gloss))
         glosses.append(gloss);
+
     if (dictionary == Dictionary::Pwg && !gloss.isEmpty()) {
         // Later lettered siblings can complete the inline sub-sense group.
         // Other nested PWG material contains examples and derived forms.
@@ -200,6 +200,7 @@ void collectGlosses(
         }
         return;
     }
+
     int previousNumber = 0;
     for (const auto &child : sense.children) {
         if (child.name != "sense")
@@ -279,6 +280,7 @@ LookupParseResult parseInflectedForms(const QByteArray &html)
     const int separator = text.lastIndexOf("<disp1>");
     if (separator < 0)
         return {false, {}, "Unexpected inflected-forms response"};
+
     // Read only the provider's summary links, never scripts or rendered HTML.
     const QString summary = text.mid(separator + 7);
     const QRegularExpression link("id_info\\('([^']+)'\\)");
@@ -293,6 +295,7 @@ LookupParseResult parseInflectedForms(const QByteArray &html)
         if (!words.contains(word))
             words.append(word);
     }
+
     if (words.isEmpty() && !summary.trimmed().isEmpty())
         return {false, {}, "Unexpected inflected-forms summary format"};
     if (words.size() > 16)
@@ -301,8 +304,6 @@ LookupParseResult parseInflectedForms(const QByteArray &html)
 }
 
 namespace {
-enum class EntrySelection { Headword, Subentry, PreviousRecord };
-
 LookupParseResult parseDictionary(
     const QByteArray &json,
     const QString &headword,
@@ -314,12 +315,14 @@ LookupParseResult parseDictionary(
     const auto document = QJsonDocument::fromJson(json, &error);
     if (error.error != QJsonParseError::NoError || !document.isObject())
         return {false, {}, "Invalid dictionary JSON"};
+
     const auto data = document.object().value("data");
     if (!data.isObject() || !data.toObject().value("entries").isArray())
         return {false, {}, "Missing dictionary entries array"};
     const auto entries = data.toObject().value("entries").toArray();
     if (entries.size() >= 20)
         return {false, {}, "Dictionary result limit reached; results may be incomplete", {}, {}, true};
+
     QStringList glosses;
     QStringList errors;
     QList<qint64> previousEntries;
@@ -334,6 +337,7 @@ LookupParseResult parseDictionary(
             errors.append("Unexpected dictionary entry format");
             continue;
         }
+
         QXmlStreamReader xml(entry.value("xml").toString());
         TeiNode root;
         int remainingNodes = 100000;
@@ -350,10 +354,12 @@ LookupParseResult parseDictionary(
                 root = readNode(xml, 0, remainingNodes);
             }
         }
+
         if (xml.hasError() || root.name.isEmpty()) {
             errors.append("Invalid dictionary XML: " + xml.errorString());
             continue;
         }
+
         std::vector<const TeiNode *> selected;
         if (selection == EntrySelection::Headword) {
             selected.push_back(&root);
@@ -372,6 +378,7 @@ LookupParseResult parseDictionary(
                 selected.push_back(&root);
             }
         }
+
         if (selected.empty())
             continue;
         QStringList entryGlosses;
@@ -382,6 +389,7 @@ LookupParseResult parseDictionary(
                     collectGlosses(child, dictionary, entryGlosses, usesPrevious, true);
             }
         }
+
         if (usesPrevious) {
             const qint64 number = recordNumber(root);
             if (number <= 1)
@@ -389,6 +397,7 @@ LookupParseResult parseDictionary(
             else if (!previousEntries.contains(number - 1))
                 previousEntries.append(number - 1);
         }
+
         if (entryGlosses.isEmpty() && !usesPrevious) {
             errors.append("No supported meaning structure in dictionary entry");
             continue;
@@ -398,6 +407,7 @@ LookupParseResult parseDictionary(
                 glosses.append(gloss);
         }
     }
+
     if (selection == EntrySelection::PreviousRecord) {
         if (!matchingRecords)
             errors.append("Referenced PWG record not found");
@@ -408,6 +418,7 @@ LookupParseResult parseDictionary(
             sourceHeadword.clear();
         }
     }
+
     errors.removeDuplicates();
     return {errors.isEmpty(), glosses, errors.join("; "), previousEntries, sourceHeadword};
 }

@@ -550,6 +550,10 @@ Qt preset and uses four-space indentation and a 100-column target.
 `BasedOnStyle: LLVM` supplies defaults; the explicit options implement the selected
 Qt-based style. Configure CLion to use this file when formatting C++ code.
 
+Declare C++ classes in headers and define their methods in the corresponding
+`.cpp` files. Test classes follow the same split. Separate method declarations
+and logical steps with blank lines.
+
 Each concrete evaluator and its helpers belong under `src/evaluators/<name>/`;
 shared infrastructure stays directly under `src/evaluators/`. The registry still
 registers arithmetic automatically and owns the shared sessions.

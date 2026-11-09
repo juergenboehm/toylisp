@@ -1,25 +1,23 @@
 #include "sanskritevaluator.h"
+#include "sanskritevaluator_p.h"
 #include "sanskrit/sanskrit.h"
 #include <QMap>
 #include <QStringList>
 
+sanskrit_evaluator_detail::SanskritEvaluationJob::SanskritEvaluationJob(QObject *parent)
+    : EvaluationJob(parent)
+{
+    connect(this, &EvaluationJob::cancellationRequested, this, [this] { request.cancel(); });
+}
+
+void sanskrit_evaluator_detail::SanskritEvaluationJob::setRequest(sanskrit::Request value)
+{
+    request = std::move(value);
+}
+
 namespace {
 using namespace sanskrit;
-
-class SanskritEvaluationJob : public EvaluationJob
-{
-public:
-    explicit SanskritEvaluationJob(QObject *parent)
-        : EvaluationJob(parent)
-    {
-        connect(this, &EvaluationJob::cancellationRequested, this, [this] { request.cancel(); });
-    }
-
-    void setRequest(Request value) { request = std::move(value); }
-
-private:
-    Request request;
-};
+using sanskrit_evaluator_detail::SanskritEvaluationJob;
 
 QString devanagari(const std::string &headword)
 {
@@ -124,6 +122,7 @@ QString compactGrammar(const std::vector<GrammarFeature> &grammar)
         {"First", "1p"},
         {"Second", "2p"},
         {"Third", "3p"}};
+
     QMap<QString, QString> features;
     QStringList extra;
     for (const auto &feature : grammar) {
@@ -138,6 +137,7 @@ QString compactGrammar(const std::vector<GrammarFeature> &grammar)
         else
             extra.append(name + '=' + value);
     }
+
     QStringList parts;
     for (const auto &key : {"Case", "Number", "Gender", "Person"}) {
         const auto value = features.take(key);
@@ -145,6 +145,7 @@ QString compactGrammar(const std::vector<GrammarFeature> &grammar)
             parts.append(value);
     }
     parts += features.values();
+
     const auto compact = parts.join('.');
     if (extra.isEmpty())
         return compact;
@@ -175,12 +176,14 @@ Evaluation formatVerse(const AnalysisWithGlosses &result)
             labels.insert(word.lemmaSlp1, devanagari(word.lemmaSlp1) + " (" + label + ")");
         }
     }
+
     lines.append("Padapāṭha: " + pada.join(" | "));
     lines.append("Grammatik: " + grammar.join(" | "));
     if (!analysis.notice.empty())
         lines.append("Dharmamitra: " + QString::fromStdString(analysis.notice));
     for (const auto &diagnostic : analysis.diagnostics)
         lines.append(diagnosticText(diagnostic, dictionary.dictionary));
+
     lines.append("MW-Einträge:");
     if (!result.wordsWithoutHeadwords.empty()) {
         QStringList unavailable;
@@ -189,6 +192,7 @@ Evaluation formatVerse(const AnalysisWithGlosses &result)
         unavailable.removeDuplicates();
         lines.append("  No usable dictionary headword for: " + unavailable.join(", "));
     }
+
     for (const auto &entry : dictionary.entries) {
         QStringList glosses;
         for (std::size_t i = 0; i < entry.meanings.size() && i < 2; ++i)
@@ -200,6 +204,7 @@ Evaluation formatVerse(const AnalysisWithGlosses &result)
             "  " + labels.value(entry.headwordSlp1) + ": "
             + (gloss.isEmpty() ? QString("No usable MW gloss") : gloss));
     }
+
     appendLookupDiagnostics(lines, dictionary);
     return {analysis.diagnostics.empty() && dictionary.diagnostics.empty(), lines.join('\n')};
 }
@@ -208,6 +213,11 @@ Evaluation formatVerse(const AnalysisWithGlosses &result)
 SanskritEvaluator::SanskritEvaluator(Sanskrit &sanskrit)
     : sanskrit(sanskrit)
 {}
+
+void SanskritEvaluator::setDictionary(sanskrit::Dictionary value)
+{
+    dictionary = value;
+}
 
 EvaluationJob *SanskritEvaluator::startEvaluation(const QString &input, QObject *parent)
 {

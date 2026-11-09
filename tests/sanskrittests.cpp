@@ -1,3 +1,4 @@
+#include "sanskrittests.h"
 #include "sanskrit/sanskrit.h"
 #include <deque>
 #include <iostream>
@@ -12,64 +13,60 @@ void check(bool condition, const char *message)
     if (!condition)
         throw std::runtime_error(message);
 }
+} // namespace
 
-class TestService : public SanskritService
+namespace sanskrit_test {
+using namespace sanskrit;
+
+void TestService::post(std::function<void()> task)
 {
-public:
-    void post(std::function<void()> task) override { tasks.push_back(std::move(task)); }
+    tasks.push_back(std::move(task));
+}
 
-    Request lookup(
-        std::vector<std::string> headwords,
-        Dictionary dictionary,
-        bool includeBaseForms,
-        Completion<DictionaryResult> completion) override
-    {
-        ++lookups;
-        lastHeadwords = std::move(headwords);
-        lastIncludeBaseForms = includeBaseForms;
-        auto result = dictionaryResult;
-        result.dictionary = dictionary;
-        return enqueue(std::move(completion), std::move(result));
-    }
+Request TestService::lookup(
+    std::vector<std::string> headwords,
+    Dictionary dictionary,
+    bool includeBaseForms,
+    Completion<DictionaryResult> completion)
+{
+    ++lookups;
+    lastHeadwords = std::move(headwords);
+    lastIncludeBaseForms = includeBaseForms;
+    auto result = dictionaryResult;
+    result.dictionary = dictionary;
+    return enqueue(std::move(completion), std::move(result));
+}
 
-    Request analyze(std::string text, Script script, Completion<Analysis> completion) override
-    {
-        ++analyses;
-        lastText = std::move(text);
-        lastScript = script;
-        return enqueue(std::move(completion), analysis);
-    }
+Request TestService::analyze(std::string text, Script script, Completion<Analysis> completion)
+{
+    ++analyses;
+    lastText = std::move(text);
+    lastScript = script;
+    return enqueue(std::move(completion), analysis);
+}
 
-    void runNext()
-    {
-        check(!tasks.empty(), "expected a pending callback");
-        auto task = std::move(tasks.front());
-        tasks.pop_front();
-        task();
-    }
+void TestService::runNext()
+{
+    check(!tasks.empty(), "expected a pending callback");
+    auto task = std::move(tasks.front());
+    tasks.pop_front();
+    task();
+}
 
-    std::deque<std::function<void()>> tasks;
-    Analysis analysis;
-    DictionaryResult dictionaryResult;
-    int lookups = 0;
-    int analyses = 0;
-    bool lastIncludeBaseForms = false;
-    std::vector<std::string> lastHeadwords;
-    std::string lastText;
-    Script lastScript = Script::Devanagari;
+template<typename Result>
+Request TestService::enqueue(Completion<Result> completion, Result result)
+{
+    auto cancelled = std::make_shared<bool>(false);
+    post([cancelled, completion = std::move(completion), result = std::move(result)]() mutable {
+        if (!*cancelled)
+            completion(std::move(result));
+    });
+    return Request([cancelled] { *cancelled = true; });
+}
+} // namespace sanskrit_test
 
-private:
-    template<typename Result>
-    Request enqueue(Completion<Result> completion, Result result)
-    {
-        auto cancelled = std::make_shared<bool>(false);
-        post([cancelled, completion = std::move(completion), result = std::move(result)]() mutable {
-            if (!*cancelled)
-                completion(std::move(result));
-        });
-        return Request([cancelled] { *cancelled = true; });
-    }
-};
+namespace {
+using sanskrit_test::TestService;
 
 void transliteration()
 {

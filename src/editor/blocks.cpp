@@ -33,6 +33,7 @@ EvaluationBlock locateBlock(const QTextBlock &markerBlock)
             inputLines.prepend(lines[i]);
         }
     }
+
     if (!foundStart) {
         result.error = "Missing >> marker";
         return result;
@@ -48,6 +49,7 @@ EvaluationBlock locateBlock(const QTextBlock &markerBlock)
     for (auto block = markerBlock; block.isValid(); block = block.next()) {
         const auto lines = block == markerBlock ? markerLines : plainTextLines(block);
         int position = block.position();
+
         for (int i = 0; i < lines.size(); ++i) {
             const auto &line = lines[i];
             if (block != markerBlock || i > 0) {
@@ -61,5 +63,6 @@ EvaluationBlock locateBlock(const QTextBlock &markerBlock)
             position += line.size() + 1;
         }
     }
+
     return result;
 }

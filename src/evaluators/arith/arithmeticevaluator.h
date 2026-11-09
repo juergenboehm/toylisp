@@ -1,4 +1,5 @@
 #pragma once
+
 #include "evaluators/evaluator.h"
 #include <QMap>
 

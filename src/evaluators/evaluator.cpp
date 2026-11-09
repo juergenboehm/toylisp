@@ -5,6 +5,21 @@ EvaluationJob::EvaluationJob(QObject *parent)
     : QObject(parent)
 {}
 
+bool EvaluationJob::isFinished() const
+{
+    return finished;
+}
+
+bool EvaluationJob::isCancelled() const
+{
+    return cancelled;
+}
+
+Evaluation EvaluationJob::result() const
+{
+    return evaluation;
+}
+
 void EvaluationJob::finish(const Evaluation &result)
 {
     if (finished || cancelled)
@@ -22,6 +37,8 @@ void EvaluationJob::cancel()
     emit cancellationRequested();
 }
 
+Evaluator::~Evaluator() = default;
+
 Evaluation Evaluator::evaluate(const QString &)
 {
     return {false, "This evaluator requires asynchronous evaluation"};
@@ -38,6 +55,7 @@ EvaluatorRegistry::EvaluatorRegistry()
 {
     evaluators.emplace("arith", std::make_unique<ArithmeticEvaluator>());
 }
+
 Evaluation EvaluatorRegistry::evaluate(const QString &name, const QString &input)
 {
     QString selected = name.isEmpty() ? defaultName : name;

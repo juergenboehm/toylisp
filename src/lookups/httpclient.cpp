@@ -11,12 +11,14 @@ HttpRequest::HttpRequest(QNetworkReply *reply, const HttpOptions &options, QObje
     connect(reply, &QIODevice::readyRead, this, [this, options] {
         readAvailable(options.maxResponseBytes);
     });
+
     connect(reply, &QNetworkReply::finished, this, [this, options] {
         if (done)
             return;
         readAvailable(options.maxResponseBytes);
         if (done)
             return;
+
         const int status = this->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (status && (status < 200 || status >= 300))
             complete(QString("HTTP %1").arg(status));
@@ -25,6 +27,7 @@ HttpRequest::HttpRequest(QNetworkReply *reply, const HttpOptions &options, QObje
         else
             complete();
     });
+
     timer.start(options.timeoutMs);
 }
 
@@ -33,6 +36,11 @@ HttpRequest::~HttpRequest()
     cancel();
     if (reply)
         reply->deleteLater();
+}
+
+const HttpResponse &HttpRequest::result() const
+{
+    return response;
 }
 
 void HttpRequest::readAvailable(qint64 limit)

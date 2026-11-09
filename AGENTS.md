@@ -247,6 +247,12 @@ Use C++17 and the repository's `.clang-format`, exported from CLion's Qt preset
 (four-space indentation, 100-column target). Its LLVM base supplies defaults;
 preserve the explicit options implementing the selected Qt-based style. Keep IDE
 formatting consistent with this file.
+Declare C++ classes and structs in `.h` files and define their methods in the
+corresponding `.cpp` files. This also applies to private helpers and test classes.
+Keep implementation-only types in private headers or in their owning class's
+private section. Leave a blank line between every pair of method declarations,
+including constructors, signals and slots. Use blank lines to separate logical
+steps within method bodies and keep long blocks readable.
 Use PascalCase for types and camelCase for functions and variables. Prefer
 specific names distinguishing editor behavior from evaluator behavior. Avoid
 platform-specific APIs when Qt provides a portable equivalent.

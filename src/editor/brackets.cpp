@@ -57,6 +57,7 @@ int matchingBracket(QTextBlock block, int index)
                 }
             }
         }
+
         block = forward ? block.next() : block.previous();
         data = block.isValid() ? bracketData(block) : nullptr;
         index = forward || !data ? 0 : data->brackets.size() - 1;
@@ -108,6 +109,7 @@ BracketMatch findBracketMatch(const QTextCursor &cursor)
             return {};
         --bracket;
     }
+
     return {
         block.position() + bracket->position,
         matchingBracket(block, static_cast<int>(bracket - begin))};

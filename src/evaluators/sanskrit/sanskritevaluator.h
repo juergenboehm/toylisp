@@ -11,7 +11,9 @@ class SanskritEvaluator : public Evaluator
 {
 public:
     explicit SanskritEvaluator(sanskrit::Sanskrit &sanskrit);
-    void setDictionary(sanskrit::Dictionary value) { dictionary = value; }
+
+    void setDictionary(sanskrit::Dictionary value);
+
     EvaluationJob *startEvaluation(const QString &input, QObject *parent) override;
 
 private:
@@ -23,6 +25,7 @@ class SanskritVerseEvaluator : public Evaluator
 {
 public:
     explicit SanskritVerseEvaluator(sanskrit::Sanskrit &sanskrit);
+
     EvaluationJob *startEvaluation(const QString &input, QObject *parent) override;
 
 private:
