@@ -7,6 +7,7 @@
 #include <QAction>
 #include <QFile>
 #include <QFontMetricsF>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
@@ -15,8 +16,10 @@
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTextBlock>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QWheelEvent>
 #include <QtTest>
 
@@ -341,6 +344,99 @@ void Tests::textZoomPerTabAndResetAction()
     normalSize->trigger(); // Closing the last tab leaves the menu safe to use.
     toolbar->actions()[0]->trigger();
     QCOMPARE(qobject_cast<Editor *>(tabs->currentWidget())->font().pointSizeF(), normalPointSize);
+}
+
+void Tests::lineWrapPerTabAndControls()
+{
+    MainWindow window;
+    window.show();
+    auto *first = window.findChild<Editor *>();
+    QVERIFY(first);
+    auto *tabs = qobject_cast<QTabWidget *>(first->parentWidget()->parentWidget());
+    QVERIFY(tabs);
+
+    auto *lineWrap = window.findChild<QAction *>("lineWrapAction");
+    QVERIFY(lineWrap);
+    auto *view = window.menuBar()->actions().at(2)->menu();
+    QVERIFY(view && view->actions().contains(lineWrap));
+    auto *toolbar = window.findChild<QToolBar *>("fileToolbar");
+    QVERIFY(toolbar);
+    auto *button = qobject_cast<QToolButton *>(toolbar->widgetForAction(lineWrap));
+    QVERIFY(button && button->isCheckable());
+    QVERIFY(!button->icon().pixmap(24).isNull());
+
+    QCOMPARE(first->lineWrapMode(), QPlainTextEdit::NoWrap);
+    QVERIFY(!button->isChecked());
+    lineWrap->trigger();
+    QCOMPARE(first->lineWrapMode(), QPlainTextEdit::WidgetWidth);
+    QCOMPARE(first->wordWrapMode(), QTextOption::WrapAtWordBoundaryOrAnywhere);
+    QVERIFY(button->isChecked());
+
+    toolbar->actions()[0]->trigger();
+    auto *second = qobject_cast<Editor *>(tabs->currentWidget());
+    QVERIFY(second && second != first);
+    QCOMPARE(second->lineWrapMode(), QPlainTextEdit::NoWrap);
+    QVERIFY(!button->isChecked());
+    QVERIFY(!lineWrap->isChecked());
+
+    tabs->setCurrentWidget(first);
+    QVERIFY(button->isChecked());
+    QTest::mouseClick(button, Qt::LeftButton);
+    QCOMPARE(first->lineWrapMode(), QPlainTextEdit::NoWrap);
+    QVERIFY(!lineWrap->isChecked());
+
+    tabs->setCurrentWidget(second);
+    QTest::mouseClick(button, Qt::LeftButton);
+    QCOMPARE(second->lineWrapMode(), QPlainTextEdit::WidgetWidth);
+    QCOMPARE(first->lineWrapMode(), QPlainTextEdit::NoWrap);
+    QVERIFY(lineWrap->isChecked());
+
+    QVERIFY(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Q_ARG(int, 0)));
+    QVERIFY(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Q_ARG(int, 0)));
+    QCOMPARE(tabs->count(), 0);
+    QVERIFY(!lineWrap->isEnabled());
+    QVERIFY(!button->isChecked());
+    toolbar->actions()[0]->trigger();
+    QVERIFY(lineWrap->isEnabled());
+    QVERIFY(!lineWrap->isChecked());
+}
+
+void Tests::lineWrapPreservesEditingState()
+{
+    EvaluatorRegistry registry;
+    Editor editor(registry);
+    editor.resize(320, 200);
+    editor.show();
+    const QString original(200, QLatin1Char('a'));
+    editor.setPlainText(original);
+    const auto block = editor.document()->firstBlock();
+    auto cursor = editor.textCursor();
+    cursor.setPosition(5);
+    cursor.setPosition(10, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+
+    QCOMPARE(block.layout()->lineCount(), 1);
+    editor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    QTRY_VERIFY(block.layout()->lineCount() > 1);
+    QCOMPARE(editor.document()->toRawText(), original);
+    QCOMPARE(editor.textCursor().position(), cursor.position());
+    QCOMPARE(editor.textCursor().anchor(), cursor.anchor());
+    QVERIFY(!editor.document()->isModified());
+    QVERIFY(!editor.document()->isUndoAvailable());
+
+    editor.insertPlainText("replacement");
+    const auto edited = editor.document()->toRawText();
+    editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    QCOMPARE(block.layout()->lineCount(), 1);
+    QCOMPARE(editor.document()->toRawText(), edited);
+    QVERIFY(editor.document()->isModified());
+    editor.undo();
+    QCOMPARE(editor.document()->toRawText(), original);
+
+    editor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    QVERIFY(editor.document()->isRedoAvailable());
+    editor.redo();
+    QCOMPARE(editor.document()->toRawText(), edited);
 }
 
 void Tests::files()

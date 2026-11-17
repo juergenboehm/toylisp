@@ -3,5 +3,6 @@
         <file>new.svg</file>
         <file>open.svg</file>
         <file>save.svg</file>
+        <file>line-wrap.svg</file>
     </qresource>
 </RCC>

@@ -140,6 +140,12 @@ Keep tab stops four spaces wide at every size. Zoom must preserve document text,
 selection, modified state and undo/redo history. Configurable font families and
 default sizes remain planned.
 
+View → Line Wrap and its checkable toolbar button share an action for the current
+editor tab. New and reopened tabs start with `NoWrap` and the setting is not saved.
+When enabled, use `QPlainTextEdit::WidgetWidth` with Qt's default
+`WrapAtWordBoundaryOrAnywhere` policy. Wrap only the display and preserve text,
+selection, modified state and undo/redo history.
+
 Keep parser/evaluator logic separate from editor UI. One application-wide registry
 owns one persistent environment per evaluator; editors do not own environments.
 Evaluator overrides and the global default must use that same registry.

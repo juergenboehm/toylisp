@@ -66,6 +66,21 @@ MainWindow::MainWindow()
         if (auto *editor = currentEditor())
             editor->resetTextSize();
     });
+
+    auto *lineWrap = view->addAction(QIcon(":/icons/line-wrap.svg"), "&Line Wrap");
+    lineWrap->setObjectName("lineWrapAction");
+    lineWrap->setCheckable(true);
+    lineWrap->setEnabled(false);
+    connect(lineWrap, &QAction::triggered, this, [this](bool checked) {
+        if (auto *editor = currentEditor())
+            editor->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+    });
+    connect(editors, &QTabWidget::currentChanged, this, [this, lineWrap] {
+        const auto *editor = currentEditor();
+        lineWrap->setEnabled(editor != nullptr);
+        lineWrap->setChecked(editor && editor->lineWrapMode() == QPlainTextEdit::WidgetWidth);
+    });
+
     auto wordEvaluator = std::make_unique<SanskritEvaluator>(sanskrit);
     auto *sanskritEvaluator = wordEvaluator.get();
     registry.addEvaluator("sanskrit", std::move(wordEvaluator));
@@ -154,6 +169,8 @@ MainWindow::MainWindow()
     find->setShortcuts({QKeySequence::Find, QKeySequence::Replace});
     connect(find, &QAction::triggered, this, &MainWindow::findReplace);
 
+    toolbar->addSeparator();
+    toolbar->addAction(lineWrap);
     toolbar->addSeparator();
     toolbar->addWidget(new QLabel(" Default evaluator: ", toolbar));
     auto *selector = new QComboBox(toolbar);

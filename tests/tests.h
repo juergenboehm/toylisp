@@ -52,6 +52,10 @@ private slots:
 
     void textZoomPerTabAndResetAction();
 
+    void lineWrapPerTabAndControls();
+
+    void lineWrapPreservesEditingState();
+
     void files();
 
     void closePromptsAndTabActions();

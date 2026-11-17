@@ -20,6 +20,9 @@ but a Windows build has not yet been verified.
   restores 12 points in the current editor. Tabs start at normal size; zoom is not
   saved with files or retained after closing a tab. Tab stops remain four spaces
   wide. Zoom preserves text, selections, modified state and undo/redo history.
+- View → Line Wrap and the checkable toolbar button toggle visual wrapping in the
+  current editor tab. Qt prefers word boundaries and breaks within words that are
+  too wide. New and reopened tabs start with wrapping off.
 - Text editors with undo/redo, clipboard operations, select all and
   case-sensitive find/replace (including Replace All).
 - Matching `()`, `[]` and `{}` highlighting at or immediately before the cursor.
@@ -380,8 +383,8 @@ CTest sets `QT_QPA_PLATFORM=offscreen`, so tests need no display server. Tests
 cover arithmetic, malformed input, transactional variables, shared sessions,
 block boundaries, replacement and undo/redo, bracket matching, per-tab text zoom,
 fine wheel/touchpad deltas, zoom limits, normal scrolling and the Ctrl+0 reset,
-file round trips, write failures, save/discard/cancel prompts and window
-construction. The window test writes
+per-tab line wrapping and its linked controls, file round trips, write failures,
+save/discard/cancel prompts and window construction. The window test writes
 `build/toylisp-screenshot.png` when run through CTest.
 
 `sanskrit_tests` links only the Qt-free Sanskrit library and covers text
@@ -428,6 +431,7 @@ For manual acceptance, launch the application, resize both splitters, create
 and close tabs, try save/discard/cancel, use the File dialogs, and verify
 find/replace and keyboard shortcuts. Try Ctrl+mouse wheel in different editor tabs,
 check the four-space tab stops, and reset via View → Normal Size and Ctrl+0.
+Try Line Wrap from the View menu and toolbar and check the state when switching tabs.
 Evaluate a variable assignment in one tab and use it in another, edit the input,
 reevaluate, undo, save and reopen.
 Native file dialogs and Windows behavior require platform-specific manual checks.
