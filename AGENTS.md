@@ -4,13 +4,15 @@
 
 ToyLisp is a C++17 / Qt5 Widgets desktop application built with CMake. Linux is
 its initial target; Windows compatibility is intended but unverified. Arithmetic
-and asynchronous Sanskrit word lookup and verse analysis are implemented.
+and asynchronous Sanskrit word lookup, verse analysis and Python text macros are implemented.
 Identity, Lisp and Macaulay2 remain planned capabilities.
 The standalone Lisp500 CLI has a Linux LP64 port; Lisp integration into the Qt
 editor remains planned.
 
 - `src/app/`: application entry point.
 - `src/ui/`: main window, text editors, menus and file dialogs.
+- `src/macro/`: asynchronous Python macro jobs and the bundled dispatcher;
+  `src/macro/python/` contains selectable `macro(txt)` Python files.
 - `src/editor/`: widget-independent QtGui block operations and a bracket highlighter
   with metadata-based matching; both are built into `toylisp_ui`.
 - `src/evaluators/`: shared evaluator interface, result, job and registry.
@@ -105,6 +107,35 @@ QT_QPA_PLATFORM=offscreen ./build/toylisp_bracket_benchmarks
 ```
 
 ## Architecture and behavior
+
+Python text macros are independent of evaluation markers and the evaluator registry.
+The toolbar lists `src/macro/python/*.py` by basename in alphabetical order and
+refreshes on opening; preserve the selected file when possible. CMake embeds the
+source directory's absolute path, so launching from another working directory works.
+Each invocation compiles the current source directly, avoiding stale bytecode after
+rapid edits. The dispatcher is bundled as a Qt resource. Use the saved Sanskrit
+Python interpreter path, with one separate asynchronous process per invocation and
+at most one active macro per editor. Keep the process protocol on stdout and route
+macro prints to stderr. Retain the transport's startup, timeout and message limits
+(five seconds, 40 seconds and 256 KiB per JSON message).
+
+Pass the current selection with LF line breaks to `macro(txt)` and require a string
+return value. An empty string deletes the selection. Replace the captured range in
+one undo operation; identity results preserve modified state and undo history.
+Track range offsets across unrelated edits, cancel any edit overlapping the captured
+text, and revalidate the original selection before insertion. Switching tabs or
+moving the cursor must not retarget the result or move the user's cursor back.
+Cancel on tab/application close and Escape; cancel application work before modal save
+prompts. Errors go to the Output tab/status bar and preserve the document. Disable
+Run Macro without a selection, without available macros or while its tab is busy.
+
+`devanagari_iast.py` uses the installed `indic_transliteration` package's `detect.detect`
+and `sanscript.transliterate` to insert an IAST line after each Devanagari-only line.
+Require a Devanagari letter; allow Devanagari characters, spaces, tabs and punctuation.
+Reject mixed-script letters and ASCII digits, retaining nonmatching and empty lines.
+Preserve line endings, final virama and vowel length. Macro tests use Python 3 on PATH;
+`TOYLISP_TEST_PYTHON` can select an interpreter with the real transliteration package.
+Only the package-dependent probe cases are skipped when it is unavailable.
 
 Lisp500 remains independent of the Qt evaluator registry. Preserve the existing
 interpreter function and variable names. Its two-word headers, allocations and

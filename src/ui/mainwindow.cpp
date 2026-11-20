@@ -2,6 +2,7 @@
 #include "editor.h"
 #include "evaluators/sanskrit/sanskritevaluator.h"
 #include "evaluators/test/testevaluator.h"
+#include "macroselector.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
@@ -25,7 +26,7 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 
-MainWindow::MainWindow()
+MainWindow::MainWindow(const QString &macroDirectory)
 {
     Q_INIT_RESOURCE(icons);
     setWindowTitle("ToyLisp");
@@ -84,8 +85,7 @@ MainWindow::MainWindow()
     auto wordEvaluator = std::make_unique<SanskritEvaluator>(sanskrit);
     auto *sanskritEvaluator = wordEvaluator.get();
     registry.addEvaluator("sanskrit", std::move(wordEvaluator));
-    registry.addEvaluator(
-        "sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(sanskrit));
+    registry.addEvaluator("sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(sanskrit));
     registry.addEvaluator("test", std::make_unique<TestEvaluator>());
 
     auto *sanskritMenu = menuBar()->addMenu("&Sanskrit");
@@ -116,12 +116,14 @@ MainWindow::MainWindow()
         });
     }
 
-    auto *cancelLookup = sanskritMenu->addAction("&Cancel Pending Evaluations in This Tab");
+    auto *cancelLookup = sanskritMenu->addAction("&Cancel Pending Work in This Tab");
     cancelLookup->setObjectName("cancelEvaluationsAction");
     cancelLookup->setShortcut(QKeySequence(Qt::Key_Escape));
     connect(cancelLookup, &QAction::triggered, this, [this] {
-        if (auto *editor = currentEditor())
+        if (auto *editor = currentEditor()) {
             editor->cancelEvaluations();
+            editor->cancelMacro();
+        }
     });
 
     auto *toolbar = addToolBar("File");
@@ -184,10 +186,37 @@ MainWindow::MainWindow()
         registry.defaultName = selector->currentData().toString();
     });
 
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel(" Macro: ", toolbar));
+    macroSelector = new MacroSelector(
+        macroDirectory.isEmpty() ? QString::fromUtf8(TOYLISP_PYTHON_MACRO_DIRECTORY)
+                                 : macroDirectory,
+        toolbar);
+    toolbar->addWidget(macroSelector);
+    runMacroAction = toolbar->addAction("Run Macro");
+    runMacroAction->setObjectName("runMacroAction");
+    runMacroAction->setToolTip("Replace the selected text using the selected Python macro");
+    connect(runMacroAction, &QAction::triggered, this, [this] {
+        if (auto *editor = currentEditor(); editor && macroSelector->currentIndex() >= 0)
+            editor->runMacro(
+                QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString(),
+                macroSelector->currentData().toString());
+    });
+    connect(macroSelector, &MacroSelector::macrosChanged, this, &MainWindow::updateMacroActivity);
+    connect(
+        macroSelector,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &MainWindow::updateMacroActivity);
+    connect(editors, &QTabWidget::currentChanged, this, &MainWindow::updateMacroActivity);
+
     statusBar()->showMessage("Ready — enter >>, input, then == and Return to evaluate");
     lookupStatus = new QLabel(this);
     lookupStatus->setObjectName("lookupStatus");
     statusBar()->addPermanentWidget(lookupStatus);
+    macroStatus = new QLabel(this);
+    macroStatus->setObjectName("macroStatus");
+    statusBar()->addPermanentWidget(macroStatus);
     addEditor();
 
     const QString pythonError = sanskritService.setPythonInterpreter(
@@ -198,7 +227,7 @@ MainWindow::MainWindow()
 
 MainWindow::~MainWindow()
 {
-    cancelEvaluations();
+    cancelPendingWork();
 }
 
 void MainWindow::choosePythonInterpreter()
@@ -206,21 +235,24 @@ void MainWindow::choosePythonInterpreter()
     QSettings settings("ToyLisp", "ToyLisp");
     const QString key = "sanskrit/pythonInterpreter";
     bool accepted = false;
-    QString path
-        = QInputDialog::getText(
-              this, "Python Interpreter",
-              "Path to Python with requests and indic-transliteration installed.\n"
-              "Leave blank to disable verse analysis.",
-              QLineEdit::Normal, settings.value(key).toString(), &accepted)
-              .trimmed();
+    QString path = QInputDialog::getText(
+                       this,
+                       "Python Interpreter",
+                       "Path to Python with requests and indic-transliteration installed.\n"
+                       "Also used for Python text macros.\n"
+                       "Leave blank to disable verse analysis and macros.",
+                       QLineEdit::Normal,
+                       settings.value(key).toString(),
+                       &accepted)
+                       .trimmed();
     if (!accepted)
         return;
 
     if (path.startsWith("~/"))
         path.replace(0, 1, QDir::homePath());
     const QFileInfo executable(path);
-    if (!path.isEmpty() && (!executable.isAbsolute() || !executable.isFile()
-                            || !executable.isExecutable())) {
+    if (!path.isEmpty()
+        && (!executable.isAbsolute() || !executable.isFile() || !executable.isExecutable())) {
         QMessageBox::warning(this, "Python Interpreter", "Enter the absolute path to an executable.");
         return;
     }
@@ -253,6 +285,8 @@ Editor *MainWindow::addEditor()
         statusBar()->showMessage(message, 10000);
     });
     connect(editor, &Editor::evaluationActivityChanged, this, &MainWindow::updateEvaluationActivity);
+    connect(editor, &Editor::macroActivityChanged, this, &MainWindow::updateMacroActivity);
+    connect(editor, &Editor::selectionChanged, this, &MainWindow::updateMacroActivity);
 
     editor->setFocus();
     return editor;
@@ -264,6 +298,19 @@ void MainWindow::updateEvaluationActivity()
     for (int i = 0; i < editors->count(); ++i)
         count += qobject_cast<Editor *>(editors->widget(i))->activeEvaluationCount();
     lookupStatus->setText(count ? QString("Pending lookups: %1").arg(count) : QString());
+}
+
+void MainWindow::updateMacroActivity()
+{
+    const auto *editor = currentEditor();
+    runMacroAction->setEnabled(
+        editor && editor->textCursor().hasSelection() && !editor->isReadOnly()
+        && !editor->macroIsRunning() && macroSelector->currentIndex() >= 0);
+
+    int count = 0;
+    for (int i = 0; i < editors->count(); ++i)
+        count += qobject_cast<Editor *>(editors->widget(i))->macroIsRunning();
+    macroStatus->setText(count ? QString("Running macros: %1").arg(count) : QString());
 }
 
 void MainWindow::updateTitle(Editor *editor)
@@ -344,20 +391,24 @@ void MainWindow::closeTab(int index)
         return;
 
     editor->cancelEvaluations();
+    editor->cancelMacro();
     editors->removeTab(index);
     editor->deleteLater();
 }
 
-void MainWindow::cancelEvaluations()
+void MainWindow::cancelPendingWork()
 {
-    for (int i = 0; i < editors->count(); ++i)
-        qobject_cast<Editor *>(editors->widget(i))->cancelEvaluations();
+    for (int i = 0; i < editors->count(); ++i) {
+        auto *editor = qobject_cast<Editor *>(editors->widget(i));
+        editor->cancelEvaluations();
+        editor->cancelMacro();
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    // Modal save prompts process events; no lookup may dirty a tab already checked.
-    cancelEvaluations();
+    // Modal save prompts process events; no pending work may dirty an already checked tab.
+    cancelPendingWork();
 
     for (int i = 0; i < editors->count(); ++i) {
         if (!confirmClose(qobject_cast<Editor *>(editors->widget(i)))) {

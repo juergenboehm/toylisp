@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "editor/blocks.h"
 #include "editor/brackets.h"
+#include "macro/pythonmacrojob.h"
 #include <cmath>
 #include <QFile>
 #include <QFontMetricsF>
@@ -42,12 +43,97 @@ Editor::Editor(EvaluatorRegistry &registry, QWidget *parent)
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &Editor::scheduleBracketHighlight);
     connect(this, &QPlainTextEdit::textChanged, this, &Editor::scheduleBracketHighlight);
     connect(this, &QPlainTextEdit::textChanged, this, &Editor::discardChangedEvaluations);
+    connect(document(), &QTextDocument::contentsChange, this, &Editor::trackMacroSelection);
 }
 
 Editor::~Editor()
 {
     const QSignalBlocker blocker(this);
     cancelEvaluations();
+    cancelMacro();
+}
+
+bool Editor::macroIsRunning() const
+{
+    return pendingMacro != nullptr;
+}
+
+void Editor::runMacro(const QString &interpreter, const QString &path)
+{
+    const auto cursor = textCursor();
+    if (!cursor.hasSelection() || isReadOnly())
+        return;
+    cancelMacro();
+
+    auto *job = new PythonMacroJob(this);
+    pendingMacro = std::make_unique<PendingMacro>();
+    pendingMacro->job = job;
+    pendingMacro->start = cursor.selectionStart();
+    pendingMacro->end = cursor.selectionEnd();
+    pendingMacro->input = cursor.selectedText();
+    QString text = pendingMacro->input;
+    text.replace(QChar::ParagraphSeparator, '\n');
+    text.replace(QChar::LineSeparator, '\n');
+
+    connect(
+        job,
+        &PythonMacroJob::completed,
+        this,
+        [this, job](const QString &result, const QString &error) {
+            completeMacro(job, result, error);
+        });
+    emit macroActivityChanged();
+    job->start(interpreter, path, text);
+}
+
+void Editor::cancelMacro()
+{
+    if (!pendingMacro)
+        return;
+    if (auto *job = pendingMacro->job.data()) {
+        job->cancel();
+        job->deleteLater();
+    }
+    pendingMacro.reset();
+    emit macroActivityChanged();
+}
+
+void Editor::trackMacroSelection(int position, int removed, int added)
+{
+    if (!pendingMacro || (removed == 0 && added == 0))
+        return;
+
+    if (position + removed <= pendingMacro->start) {
+        pendingMacro->start += added - removed;
+        pendingMacro->end += added - removed;
+    } else if (position < pendingMacro->end) {
+        cancelMacro();
+    }
+}
+
+void Editor::completeMacro(PythonMacroJob *job, const QString &text, const QString &error)
+{
+    if (!pendingMacro || pendingMacro->job != job)
+        return;
+    auto pending = std::move(pendingMacro);
+    job->deleteLater();
+
+    QTextCursor cursor(document());
+    cursor.setPosition(pending->start);
+    cursor.setPosition(pending->end, QTextCursor::KeepAnchor);
+    if (!error.isEmpty()) {
+        emit diagnostic("Macro failed: " + error);
+    } else if (!isReadOnly() && cursor.selectedText() == pending->input) {
+        QString input = pending->input;
+        input.replace(QChar::ParagraphSeparator, '\n');
+        input.replace(QChar::LineSeparator, '\n');
+        if (text != input) {
+            cursor.beginEditBlock();
+            cursor.insertText(text);
+            cursor.endEditBlock();
+        }
+    }
+    emit macroActivityChanged();
 }
 
 int Editor::activeEvaluationCount() const

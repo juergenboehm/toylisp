@@ -21,10 +21,15 @@ target_link_libraries(toylisp_sanskrit_evaluators PUBLIC toylisp_core sanskrit)
 add_library(toylisp_ui
         src/ui/editor.cpp
         src/ui/mainwindow.cpp
+        src/ui/macroselector.cpp
+        src/macro/pythonmacrojob.cpp
+        src/macro/macro_python.qrc
         src/editor/blocks.cpp
         src/editor/brackets.cpp
         resources/icons.qrc)
 target_link_libraries(toylisp_ui PUBLIC toylisp_sanskrit_evaluators sanskrit_qt Qt5::Widgets)
+target_compile_definitions(toylisp_ui PRIVATE
+        TOYLISP_PYTHON_MACRO_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/src/macro/python")
 add_executable(toylisp src/app/main.cpp)
 target_link_libraries(toylisp PRIVATE toylisp_ui)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -50,9 +55,13 @@ if (BUILD_TESTING)
     add_executable(toylisp_lookup_tests tests/lookuptests.cpp)
     target_link_libraries(toylisp_lookup_tests PRIVATE toylisp_ui Qt5::Test)
     add_test(NAME toylisp_lookup_tests COMMAND toylisp_lookup_tests)
+    add_executable(toylisp_macro_tests tests/macrotests.cpp)
+    target_link_libraries(toylisp_macro_tests PRIVATE toylisp_ui Qt5::Test)
+    add_test(NAME toylisp_macro_tests COMMAND toylisp_macro_tests)
     add_executable(toylisp_bracket_benchmarks tests/bracketbenchmarks.cpp)
     target_link_libraries(toylisp_bracket_benchmarks PRIVATE toylisp_ui Qt5::Test)
     set_tests_properties(toylisp_tests toylisp_block_tests toylisp_bracket_tests toylisp_lookup_tests
+            toylisp_macro_tests
             PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     if (TARGET lisp500)
         add_executable(lisp500_tests tests/lisp500tests.c)

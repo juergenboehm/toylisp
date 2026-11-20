@@ -9,13 +9,15 @@ class Editor;
 class QTabWidget;
 class QPlainTextEdit;
 class QLabel;
+class QAction;
+class MacroSelector;
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    MainWindow();
+    explicit MainWindow(const QString &macroDirectory = {});
 
     ~MainWindow() override;
 
@@ -29,6 +31,9 @@ private:
     QTabWidget *editors;
     QPlainTextEdit *output;
     QLabel *lookupStatus;
+    QLabel *macroStatus;
+    MacroSelector *macroSelector;
+    QAction *runMacroAction;
     int untitledCount = 0;
 
     Editor *currentEditor() const;
@@ -47,9 +52,11 @@ private:
 
     void findReplace();
 
-    void cancelEvaluations();
+    void cancelPendingWork();
 
     void updateEvaluationActivity();
+
+    void updateMacroActivity();
 
     void choosePythonInterpreter();
 };

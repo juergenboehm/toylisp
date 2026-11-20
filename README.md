@@ -38,6 +38,8 @@ but a Windows build has not yet been verified.
 - Sanskrit verse analysis through Dharmamitra with Padapāṭha, grammatical
   tags and short Cologne Monier-Williams glosses.
 - A development evaluator for testing Devanagari/SLP1 transliteration locally.
+- Asynchronous Python text macros selected in the toolbar, including a local
+  Devanagari-to-IAST example. A macro replaces the current selection in one undo step.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
 Macaulay2 evaluators, configurable font families/default sizes, and additional
@@ -96,6 +98,67 @@ the document only; it does not roll back evaluator variables.
 Errors appear in the result block and in the Output tab. The Output tab keeps
 up to 2,000 lines of diagnostic text. Successful results appear in the document.
 
+## Python text macros
+
+Choose a macro in the toolbar and click **Run Macro** to replace the selected
+text in the current editor tab. The button is disabled without a selection or
+while that tab already has a running macro. Macros use the Python interpreter
+configured under **Sanskrit → Python Interpreter…**; this shares the executable
+setting with verse analysis, while each macro invocation runs in its own process.
+A blank interpreter setting disables both features.
+
+Add Python files directly under `src/macro/python/`. For example, `foo.py`
+appears as **foo** in the alphabetically sorted list and must define:
+
+```python
+def macro(txt):
+    return txt.upper()
+```
+
+The input and return value are Python strings; selection line breaks are passed
+as `\n`. An empty return string deletes the selection. The file list refreshes
+whenever the combo box opens, preserving the selected macro if it still exists.
+Each invocation reads the current Python source, so edits and new macros require
+no application rebuild or restart. The macro directory is resolved from the
+source tree at CMake configuration time, independently of the working directory.
+Keep that directory available when running this development build; rebuild after
+moving the source tree. Macros may import helper modules from their directory.
+
+The UI stays responsive during processing. Results belong to the original tab
+and selection, even after switching tabs or moving the cursor. Edits before or
+after the captured selection remain possible; editing the captured text cancels
+the macro, including when that edit is later undone. Closing the tab or pressing
+Escape cancels its pending work. Closing the application cancels work before the
+save prompts. Delayed completion does not move the cursor to the original selection.
+Errors appear in the Output tab and status bar without changing the selected text.
+An unchanged return string leaves the document and undo history untouched.
+
+The shared process transport enforces a five-second startup limit, a 40-second
+request limit and a 256 KiB limit per UTF-8 JSON protocol message, including its
+escaping and metadata. Oversized selections/results and timeouts report an error
+without partial insertion. Python exceptions, missing `macro(txt)` functions and
+non-string return values also preserve the text. Macro `print()` output is routed
+to the process diagnostics; stdout remains reserved for the protocol.
+
+The bundled **devanagari_iast** macro uses `indic_transliteration.detect.detect`
+for script detection and `sanscript.transliterate` for IAST conversion. Install
+`indic-transliteration` in the configured interpreter. It retains every existing
+line and inserts the transliteration directly below each qualifying line:
+
+```text
+नमस्ते
+namaste
+रामः
+rāmaḥ
+```
+
+A qualifying line contains at least one Devanagari letter and otherwise only
+Devanagari characters, spaces, tabs or punctuation. Blank lines, lines with Latin
+or other-script letters, and lines containing ASCII digits are left unchanged.
+Devanagari digits and danda punctuation are allowed. Existing line endings and
+trailing newlines are retained. Repeating the macro inserts another IAST line
+after each qualifying Devanagari line.
+
 ## Sanskrit lookup
 
 Enter one Devanagari word and press Return at the end of `==sanskrit`:
@@ -145,7 +208,7 @@ Existing output remains until the finished result replaces it in one undo step.
 Changes to the input, marker or existing output cancel the affected request;
 unrelated edits may proceed. Re-evaluation supersedes the old request for that
 block, and closing a tab cancels its requests. **Sanskrit → Cancel Pending
-Evaluations in This Tab** (Escape) also cancels them. Delayed completion does not
+Work in This Tab** (Escape) also cancels them and the tab's macro. Delayed completion does not
 move the cursor to the result. Running requests retain their original language.
 
 No matches, network errors and malformed responses are distinguished. On partial
@@ -186,7 +249,9 @@ incomplete-lookup diagnostic; the unsupported entry does not discard them.
 Install `requests` and `indic-transliteration` in a Python 3 environment and
 enter its executable under **Sanskrit → Python Interpreter…**. Enter an absolute
 path or a path starting with `~/`. ToyLisp saves the path and applies it
-immediately. A blank setting disables verse analysis.
+immediately for new requests. The same setting is used by Python text macros;
+a blank setting disables verse analysis and macros. A running macro retains the
+interpreter with which it was started.
 
 Use `==sanskrit-verse` or select **Sanskrit Verse (Dharmamitra + MW)** in the
 default evaluator list.
@@ -389,6 +454,20 @@ save/discard/cancel prompts and window construction. The window test writes
 
 `sanskrit_tests` links only the Qt-free Sanskrit library and covers text
 transliteration, Unicode normalization, typed results, composition and cancellation.
+`toylisp_macro_tests` uses Python 3 on PATH for offline fixtures. It covers toolbar
+discovery, source reload, Unicode and multiline selection replacement, empty
+results, undo/redo, Python failures, process limits, cancellation and tab lifetime.
+The bundled transliteration macro is tested with the real package if available.
+Set `TOYLISP_TEST_PYTHON` to a Python executable with `indic-transliteration` to
+include those cases when the default `python3` lacks the package:
+
+```bash
+TOYLISP_TEST_PYTHON=/absolute/path/to/python ctest --test-dir build --output-on-failure
+```
+
+With that package available, the macro window test also writes
+`build/toylisp-macro-screenshot.png`.
+
 `toylisp_lookup_tests` covers word transliteration, recorded MW/PWG and morphology
 responses, malformed data, local HTTP requests, timeouts/limits, partial failure,
 PWG inline sub-sense labels, mixed supported/unsupported homonyms, exact final
@@ -432,6 +511,8 @@ and close tabs, try save/discard/cancel, use the File dialogs, and verify
 find/replace and keyboard shortcuts. Try Ctrl+mouse wheel in different editor tabs,
 check the four-space tab stops, and reset via View → Normal Size and Ctrl+0.
 Try Line Wrap from the View menu and toolbar and check the state when switching tabs.
+Select Devanagari lines, run **devanagari_iast**, and undo/redo the insertion.
+Add or edit a macro file and reopen the combo box to check discovery and source reload.
 Evaluate a variable assignment in one tab and use it in another, edit the input,
 reevaluate, undo, save and reopen.
 Native file dialogs and Windows behavior require platform-specific manual checks.
@@ -530,6 +611,8 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 
 - `src/app/`: startup; the main window owns the application's evaluator registry.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
+- `src/macro/`: asynchronous Python macro jobs and the bundled process dispatcher;
+  `src/macro/python/` contains the selectable macro files, including `devanagari_iast.py`.
 - `src/lookups/`: reusable asynchronous HTTP client (`httpclient.h` / `httpclient.cpp`).
 - `src/editor/`: widget-independent block recognition, bracket metadata highlighter
   and matching. This QtGui-based code is compiled into `toylisp_ui`;
