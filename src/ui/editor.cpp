@@ -58,14 +58,14 @@ bool Editor::macroIsRunning() const
     return pendingMacro != nullptr;
 }
 
-void Editor::runMacro(const QString &interpreter, const QString &path)
+void Editor::runMacro(PythonMacroService &service, const QString &path)
 {
     const auto cursor = textCursor();
     if (!cursor.hasSelection() || isReadOnly())
         return;
     cancelMacro();
 
-    auto *job = new PythonMacroJob(this);
+    auto *job = new PythonMacroJob(service, this);
     pendingMacro = std::make_unique<PendingMacro>();
     pendingMacro->job = job;
     pendingMacro->start = cursor.selectionStart();
@@ -83,7 +83,7 @@ void Editor::runMacro(const QString &interpreter, const QString &path)
             completeMacro(job, result, error);
         });
     emit macroActivityChanged();
-    job->start(interpreter, path, text);
+    job->start(path, text);
 }
 
 void Editor::cancelMacro()

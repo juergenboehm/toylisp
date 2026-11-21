@@ -1,15 +1,20 @@
 #pragma once
 
-#include "processes/jsonprocess.h"
+#include <QObject>
+#include <QPointer>
+
+class PythonMacroService;
 
 class PythonMacroJob : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit PythonMacroJob(QObject *parent = nullptr, int timeoutMs = 40000);
+    explicit PythonMacroJob(PythonMacroService &service, QObject *parent = nullptr);
 
-    void start(const QString &interpreter, const QString &path, const QString &text);
+    ~PythonMacroJob() override;
+
+    void start(const QString &path, const QString &text);
 
     void cancel();
 
@@ -17,7 +22,7 @@ signals:
     void completed(const QString &text, const QString &error);
 
 private:
-    JsonProcess worker;
+    QPointer<PythonMacroService> service;
     bool started = false;
     bool cancelled = false;
 };

@@ -4,10 +4,13 @@
 #include "ui/macroselector.h"
 #include "ui/mainwindow.h"
 #include <QAction>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QProcess>
 #include <QSettings>
 #include <QStandardPaths>
@@ -44,6 +47,8 @@ void MacroTests::initTestCase()
 void MacroTests::init()
 {
     QSettings("ToyLisp", "ToyLisp").clear();
+    service.restart();
+    service.setInterpreter(python);
 }
 
 void MacroTests::toolbarDiscoveryAndReload()
@@ -85,7 +90,7 @@ void MacroTests::toolbarDiscoveryAndReload()
     QVERIFY(editor->macroIsRunning());
     QVERIFY(!action->isEnabled());
     auto *status = window.findChild<QLabel *>("macroStatus");
-    QCOMPARE(status->text(), QString("Running macros: 1"));
+    QCOMPARE(status->text(), QString("Pending macros: 1"));
     QTRY_COMPARE(editor->toPlainText(), QString("old"));
     QVERIFY(!editor->macroIsRunning());
     QVERIFY(status->text().isEmpty());
@@ -132,7 +137,7 @@ void MacroTests::replacementAndUndo()
     editor.setPlainText(input);
     select(editor, reverse ? 14 : 7, reverse ? 7 : 14);
     QSignalSpy errors(&editor, &Editor::diagnostic);
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     QCOMPARE(editor.toPlainText(), input);
     QTRY_VERIFY(!editor.macroIsRunning());
     QCOMPARE(errors.size(), 0);
@@ -149,7 +154,7 @@ void MacroTests::replacementAndUndo()
     const QString identity
         = writeMacro(directory.path(), "identity", "def macro(txt): return txt\n");
     editor.selectAll();
-    editor.runMacro(python, identity);
+    editor.runMacro(service, identity);
     QTRY_VERIFY(!editor.macroIsRunning());
     editor.undo();
     QCOMPARE(editor.toPlainText(), input);
@@ -164,11 +169,11 @@ void MacroTests::noSelectionAndIdentity()
     Editor editor(registry);
     QSignalSpy errors(&editor, &Editor::diagnostic);
     editor.setPlainText("unchanged\n");
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     QVERIFY(!editor.macroIsRunning());
     QCOMPARE(errors.size(), 0);
     editor.selectAll();
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     QTRY_VERIFY(!editor.macroIsRunning());
     QCOMPARE(editor.toPlainText(), QString("unchanged\n"));
     QCOMPARE(
@@ -179,7 +184,7 @@ void MacroTests::noSelectionAndIdentity()
     const QString softLineBreak = QString("first") + QChar(QChar::LineSeparator) + "second";
     editor.setPlainText(softLineBreak);
     editor.selectAll();
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     QTRY_VERIFY(!editor.macroIsRunning());
     QCOMPARE(editor.textCursor().selectedText(), softLineBreak);
     QVERIFY(!editor.document()->isModified());
@@ -189,7 +194,7 @@ void MacroTests::noSelectionAndIdentity()
         directory.path(),
         "linebreaks",
         "def macro(txt):\n    assert txt == 'first\\nsecond'\n    return 'normalized'\n");
-    editor.runMacro(python, check);
+    editor.runMacro(service, check);
     QTRY_COMPARE(editor.toPlainText(), QString("normalized"));
 }
 
@@ -241,7 +246,8 @@ void MacroTests::failuresPreserveDocument()
     editor.setPlainText(input);
     editor.selectAll();
     QSignalSpy errors(&editor, &Editor::diagnostic);
-    editor.runMacro(executable, path);
+    service.setInterpreter(executable);
+    editor.runMacro(service, path);
     QTRY_VERIFY(!editor.macroIsRunning());
     QCOMPARE(errors.size(), 1);
     QVERIFY2(
@@ -257,7 +263,8 @@ void MacroTests::failuresPreserveDocument()
         editor.selectAll();
     }
     path = writeMacro(directory.path(), "good", "def macro(txt): return 'recovered'\n");
-    editor.runMacro(python, path);
+    service.setInterpreter(python);
+    editor.runMacro(service, path);
     QTRY_COMPARE(editor.toPlainText(), QString("recovered"));
 }
 
@@ -267,11 +274,320 @@ void MacroTests::timeout()
     QVERIFY(directory.isValid());
     const QString path = writeMacro(
         directory.path(), "slow", "import time\ndef macro(txt): time.sleep(2); return txt\n");
-    PythonMacroJob job(nullptr, 50);
+    PythonMacroService limitedService({}, 50);
+    limitedService.setInterpreter(python);
+    PythonMacroJob job(limitedService);
+    PythonMacroJob queued(limitedService);
     QSignalSpy completion(&job, &PythonMacroJob::completed);
-    job.start(python, path, "original");
+    QSignalSpy queuedCompletion(&queued, &PythonMacroJob::completed);
+    job.start(path, "original");
+    queued.start(path, "queued");
     QTRY_COMPARE(completion.size(), 1);
+    QCOMPARE(queuedCompletion.size(), 1);
     QVERIFY(completion.first().at(1).toString().contains("timed out"));
+    QVERIFY(queuedCompletion.first().at(1).toString().contains("timed out"));
+
+    const QString fast
+        = writeMacro(directory.path(), "fast", "def macro(txt): return 'recovered'\n");
+    PythonMacroJob recovered(limitedService);
+    QSignalSpy recovery(&recovered, &PythonMacroJob::completed);
+    recovered.start(fast, {});
+    QTRY_COMPARE(recovery.size(), 1);
+    QCOMPARE(recovery.first().at(0).toString(), QString("recovered"));
+    QVERIFY(recovery.first().at(1).toString().isEmpty());
+}
+
+void MacroTests::sharedRuntimeAndReload()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString runtime
+        = writeMacro(directory.path(), "macro_runtime", "count = 0\nlabel = 'old'\n");
+    QDir root(directory.path());
+    QVERIFY(root.mkdir("python"));
+    const QString macroDirectory = root.filePath("python");
+    const QByteArray code
+        = "import macro_runtime as runtime\nimport os, sys\nlocal = 0\n"
+          "def macro(txt):\n    global local\n    local += 1\n    runtime.count += 1\n"
+          "    return f'{os.getpid()}:{runtime.count}:{local}:{runtime.label}:A:{len(sys.path)}'\n";
+    const QString path = writeMacro(macroDirectory, "test", code);
+    MacroSelector selector(macroDirectory);
+    QCOMPARE(selector.count(), 1);
+    QCOMPARE(selector.currentText(), QString("test"));
+    PythonMacroService shared(directory.path());
+    shared.setInterpreter(python);
+    EvaluatorRegistry registry;
+    Editor first(registry), second(registry);
+    first.setPlainText("input");
+    first.selectAll();
+    first.runMacro(shared, path);
+    QTRY_VERIFY(!first.macroIsRunning());
+    const QStringList initial = first.toPlainText().split(':');
+    QCOMPARE(initial.size(), 6);
+    QCOMPARE(initial.mid(1, 4), QStringList({"1", "1", "old", "A"}));
+
+    QByteArray changed = code;
+    changed.replace(":A:", ":B:");
+    writeMacro(macroDirectory, "test", changed);
+    writeMacro(directory.path(), "macro_runtime", "count = 0\nlabel = 'new'\n");
+    second.setPlainText("input");
+    second.selectAll();
+    second.runMacro(shared, path);
+    QTRY_VERIFY(!second.macroIsRunning());
+    const QStringList reused = second.toPlainText().split(':');
+    QCOMPARE(reused.size(), 6);
+    QCOMPARE(reused.first(), initial.first());
+    QCOMPARE(reused.mid(1, 4), QStringList({"2", "1", "old", "B"}));
+    QCOMPARE(reused.last(), initial.last());
+
+    shared.restart();
+    first.selectAll();
+    first.runMacro(shared, path);
+    QTRY_VERIFY(!first.macroIsRunning());
+    const QStringList restarted = first.toPlainText().split(':');
+    QCOMPARE(restarted.size(), 6);
+    QVERIFY(restarted.first() != initial.first());
+    QCOMPARE(restarted.mid(1, 4), QStringList({"1", "1", "new", "B"}));
+    QCOMPARE(restarted.last(), initial.last());
+    QVERIFY(QFile::exists(runtime));
+}
+
+void MacroTests::softCancellationAndQueue()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    writeMacro(directory.path(), "macro_runtime", "events = []\n");
+    const QString slow = writeMacro(
+        directory.path(),
+        "slow",
+        "import os, time\nfrom pathlib import Path\nfrom macro_runtime import events\n"
+        "def macro(txt):\n    events.append('start')\n"
+        "    Path(__file__).with_suffix('.started').write_text(str(os.getpid()))\n"
+        "    time.sleep(0.3)\n    events.append('finish')\n    return 'discarded'\n");
+    const QString fast = writeMacro(
+        directory.path(),
+        "fast",
+        "import os\nfrom macro_runtime import events\n"
+        "def macro(txt):\n    events.append(txt)\n    return f'{os.getpid()}:' + "
+        "','.join(events)\n");
+    PythonMacroService shared(directory.path());
+    shared.setInterpreter(python);
+    PythonMacroJob active(shared), cancelled(shared), next(shared);
+    QSignalSpy activeCompletion(&active, &PythonMacroJob::completed);
+    QSignalSpy cancelledCompletion(&cancelled, &PythonMacroJob::completed);
+    QSignalSpy completion(&next, &PythonMacroJob::completed);
+    active.start(slow, {});
+    QTRY_VERIFY(QFile::exists(directory.path() + "/slow.started"));
+    QFile marker(directory.path() + "/slow.started");
+    QVERIFY(marker.open(QIODevice::ReadOnly));
+    const QString pid = QString::fromUtf8(marker.readAll());
+    cancelled.start(fast, "cancelled");
+    auto *destroyed = new PythonMacroJob(shared);
+    destroyed->start(fast, "destroyed");
+    next.start(fast, "next");
+    active.cancel();
+    cancelled.cancel();
+    delete destroyed;
+    QCOMPARE(completion.size(), 0);
+    QTRY_COMPARE(completion.size(), 1);
+    QVERIFY(completion.first().at(1).toString().isEmpty());
+    QCOMPARE(completion.first().at(0).toString(), pid + ":start,finish,next");
+    QCOMPARE(activeCompletion.size(), 0);
+    QCOMPARE(cancelledCompletion.size(), 0);
+}
+
+void MacroTests::restartDiscardsRequests()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QDir root(directory.path());
+    QVERIFY(root.mkdir("python"));
+    writeMacro(directory.path(), "macro_runtime", "count = 0\n");
+    writeMacro(
+        root.filePath("python"),
+        "test",
+        "import os, time\nfrom pathlib import Path\nimport macro_runtime as runtime\n"
+        "def macro(txt):\n    runtime.count += 1\n    if txt == 'hold':\n"
+        "        Path(__file__).with_suffix('.started').touch()\n        time.sleep(2)\n"
+        "    return f'{os.getpid()}|{runtime.count}'\n");
+    QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/pythonInterpreter", python);
+    MainWindow window(root.filePath("python"), directory.path());
+    auto *first = window.findChild<Editor *>();
+    auto *tabs = qobject_cast<QTabWidget *>(first->parentWidget()->parentWidget());
+    auto *run = window.findChild<QAction *>("runMacroAction");
+    auto *restart = window.findChild<QAction *>("restartMacroInterpreterAction");
+    QVERIFY(restart);
+    auto *menu = qobject_cast<QMenu *>(restart->parent());
+    QVERIFY(menu);
+    QCOMPARE(menu->title(), QString("&Actions"));
+    first->setPlainText("seed");
+    first->selectAll();
+    run->trigger();
+    QTRY_VERIFY(!first->macroIsRunning());
+    const QString pid = first->toPlainText().section('|', 0, 0);
+    QVERIFY(first->toPlainText().endsWith("|1"));
+    first->setPlainText("hold");
+    first->selectAll();
+    run->trigger();
+    QTRY_VERIFY(QFile::exists(root.filePath("python/test.started")));
+    for (auto *action : window.findChildren<QAction *>()) {
+        if (action->shortcut() == QKeySequence::New)
+            action->trigger();
+    }
+    auto *second = qobject_cast<Editor *>(tabs->currentWidget());
+    QVERIFY(second != first);
+    second->setPlainText("queued");
+    second->selectAll();
+    run->trigger();
+    QCOMPARE(window.findChild<QLabel *>("macroStatus")->text(), QString("Pending macros: 2"));
+    writeMacro(directory.path(), "macro_runtime", "count = 10\n");
+    restart->trigger();
+    QVERIFY(!first->macroIsRunning());
+    QVERIFY(!second->macroIsRunning());
+    QCOMPARE(first->toPlainText(), QString("hold"));
+    QCOMPARE(second->toPlainText(), QString("queued"));
+    QVERIFY(!first->document()->isModified());
+    QVERIFY(!second->document()->isModified());
+    run->trigger();
+    QTRY_VERIFY(!second->macroIsRunning());
+    QVERIFY(second->toPlainText().endsWith("|11"));
+    QVERIFY(second->toPlainText().section('|', 0, 0) != pid);
+    QCOMPARE(first->toPlainText(), QString("hold"));
+}
+
+void MacroTests::failuresRetainRuntime()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    writeMacro(directory.path(), "macro_runtime", "count = 0\n");
+    const QString path = writeMacro(
+        directory.path(),
+        "count",
+        "import os\nimport macro_runtime as runtime\ndef macro(txt):\n"
+        "    runtime.count += 1\n    if txt == 'error': raise ValueError('expected')\n"
+        "    if txt == 'crash': os._exit(7)\n"
+        "    return f'{os.getpid()}|{runtime.count}'\n");
+    PythonMacroService shared(directory.path());
+    shared.setInterpreter(python);
+    PythonMacroJob first(shared), failure(shared), following(shared), crash(shared), queued(shared);
+    QSignalSpy firstResult(&first, &PythonMacroJob::completed);
+    QSignalSpy failureResult(&failure, &PythonMacroJob::completed);
+    QSignalSpy followingResult(&following, &PythonMacroJob::completed);
+    QSignalSpy crashResult(&crash, &PythonMacroJob::completed);
+    QSignalSpy queuedResult(&queued, &PythonMacroJob::completed);
+    first.start(path, {});
+    QTRY_COMPARE(firstResult.size(), 1);
+    const QString pid = firstResult.first().at(0).toString().section('|', 0, 0);
+    failure.start(path, "error");
+    following.start(path, {});
+    QTRY_COMPARE(followingResult.size(), 1);
+    QCOMPARE(failureResult.size(), 1);
+    QVERIFY(failureResult.first().at(1).toString().contains("expected"));
+    QCOMPARE(followingResult.first().at(0).toString(), pid + "|3");
+    crash.start(path, "crash");
+    queued.start(path, {});
+    QTRY_COMPARE(crashResult.size(), 1);
+    QCOMPARE(queuedResult.size(), 1);
+    QVERIFY(crashResult.first().at(1).toString().contains("Process exited"));
+    QVERIFY(!queuedResult.first().at(1).toString().isEmpty());
+    PythonMacroJob recovered(shared);
+    QSignalSpy recovery(&recovered, &PythonMacroJob::completed);
+    recovered.start(path, {});
+    QTRY_COMPARE(recovery.size(), 1);
+    const QString fresh = recovery.first().at(0).toString();
+    QVERIFY(fresh.endsWith("|1"));
+    QVERIFY(fresh.section('|', 0, 0) != pid);
+    shared.setInterpreter({});
+    shared.setInterpreter(python);
+    PythonMacroJob reconfigured(shared);
+    QSignalSpy reconfiguration(&reconfigured, &PythonMacroJob::completed);
+    reconfigured.start(path, {});
+    QTRY_COMPARE(reconfiguration.size(), 1);
+    QVERIFY(reconfiguration.first().at(0).toString().endsWith("|1"));
+    QVERIFY(reconfiguration.first().at(0).toString().section('|', 0, 0) != fresh.section('|', 0, 0));
+}
+
+void MacroTests::queueLimit()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = writeMacro(
+        directory.path(),
+        "slow",
+        "import time\nfrom pathlib import Path\ndef macro(txt):\n"
+        "    Path(__file__).with_suffix('.started').touch()\n    time.sleep(2)\n    return txt\n");
+    PythonMacroJob active(service);
+    active.start(path, {});
+    QTRY_VERIFY(QFile::exists(directory.path() + "/slow.started"));
+    QList<PythonMacroJob *> waiting;
+    for (int i = 0; i < 16; ++i) {
+        auto *job = new PythonMacroJob(service, &service);
+        waiting.append(job);
+        job->start(path, {});
+    }
+    PythonMacroJob rejected(service);
+    QSignalSpy rejection(&rejected, &PythonMacroJob::completed);
+    rejected.start(path, {});
+    QCOMPARE(rejection.size(), 1);
+    QVERIFY(rejection.first().at(1).toString().contains("queue is full"));
+    qDeleteAll(waiting);
+    active.cancel();
+    service.restart();
+}
+
+void MacroTests::runtimeGeminiExample()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString source = QFINDTESTDATA("../src/macro/macro_runtime.py");
+    QVERIFY(QFile::copy(source, directory.path() + "/macro_runtime.py"));
+    QDir root(directory.path());
+    QVERIFY(root.mkdir("google"));
+    writeMacro(root.filePath("google"), "__init__", "");
+    writeMacro(
+        root.filePath("google"),
+        "genai",
+        "created = 0\nclass Client:\n    def __init__(self):\n"
+        "        global created\n        created += 1\n        self.number = created\n"
+        "        self.calls = 0\n");
+    const QString path = writeMacro(
+        directory.path(),
+        "gemini",
+        "from macro_runtime import client\nimport os\ndef macro(txt):\n"
+        "    client.calls += 1\n"
+        "    return f'{os.getpid()}:{id(client)}:{client.number}:{client.calls}'\n");
+    PythonMacroService shared(directory.path());
+    shared.setInterpreter(python);
+    PythonMacroJob first(shared), second(shared);
+    QSignalSpy initial(&first, &PythonMacroJob::completed);
+    QSignalSpy reused(&second, &PythonMacroJob::completed);
+    first.start(path, {});
+    second.start(path, {});
+    QTRY_COMPARE(reused.size(), 1);
+    QCOMPARE(initial.size(), 1);
+    QVERIFY(initial.first().at(1).toString().isEmpty());
+    QVERIFY(reused.first().at(1).toString().isEmpty());
+    const QStringList firstValues = initial.first().at(0).toString().split(':');
+    const QStringList secondValues = reused.first().at(0).toString().split(':');
+    QCOMPARE(firstValues.size(), 4);
+    QCOMPARE(secondValues.mid(0, 3), firstValues.mid(0, 3));
+    QCOMPARE(firstValues.mid(2), QStringList({"1", "1"}));
+    QCOMPARE(secondValues.mid(2), QStringList({"1", "2"}));
+
+    shared.restart();
+    writeMacro(root.filePath("google"), "genai", "raise RuntimeError('SDK unavailable')\n");
+    PythonMacroJob unavailable(shared);
+    QSignalSpy missing(&unavailable, &PythonMacroJob::completed);
+    unavailable.start(path, {});
+    QTRY_COMPARE(missing.size(), 1);
+    QVERIFY(missing.first().at(1).toString().contains("SDK unavailable"));
+    const QString local
+        = writeMacro(directory.path(), "local", "def macro(txt): return 'local works'\n");
+    PythonMacroJob unrelated(shared);
+    QSignalSpy localResult(&unrelated, &PythonMacroJob::completed);
+    unrelated.start(local, {});
+    QTRY_COMPARE(localResult.size(), 1);
+    QCOMPARE(localResult.first().at(0).toString(), QString("local works"));
 }
 
 void MacroTests::unrelatedEditsAndCursor()
@@ -286,7 +602,7 @@ void MacroTests::unrelatedEditsAndCursor()
     Editor editor(registry);
     editor.setPlainText("before selected after");
     select(editor, 7, 15);
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     QTextCursor edit(editor.document());
     edit.setPosition(0);
     edit.insertText("prefix ");
@@ -332,7 +648,7 @@ void MacroTests::selectionBoundaries()
     Editor editor(registry);
     editor.setPlainText("ab cd ef");
     select(editor, 3, 5);
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     select(editor, start, end);
     editor.insertPlainText(edit);
     QVERIFY(editor.macroIsRunning());
@@ -372,7 +688,7 @@ void MacroTests::changedSelection()
     editor.setPlainText("before selected after");
     select(editor, 7, 15);
     QSignalSpy errors(&editor, &Editor::diagnostic);
-    editor.runMacro(python, path);
+    editor.runMacro(service, path);
     QTRY_VERIFY(QFile::exists(directory.path() + "/slow.started"));
     select(editor, start, end);
     editor.insertPlainText("x");
@@ -380,9 +696,8 @@ void MacroTests::changedSelection()
     if (undo)
         editor.undo();
     const QString edited = editor.toPlainText();
-    QTest::qWait(450);
+    QTRY_VERIFY(QFile::exists(directory.path() + "/slow.finished"));
     QCOMPARE(editor.toPlainText(), edited);
-    QVERIFY(!QFile::exists(directory.path() + "/slow.finished"));
     QCOMPARE(errors.size(), 0);
 }
 
@@ -457,9 +772,10 @@ void MacroTests::builtinMacro()
         QSKIP("Set TOYLISP_TEST_PYTHON to Python with indic-transliteration for the probe macro");
     const QString path = QFINDTESTDATA("../src/macro/python/devanagari_iast.py");
     QVERIFY(!path.isEmpty());
-    PythonMacroJob job;
+    service.setInterpreter(executable);
+    PythonMacroJob job(service);
     QSignalSpy completion(&job, &PythonMacroJob::completed);
-    job.start(executable, path, input);
+    job.start(path, input);
     QTRY_COMPARE(completion.size(), 1);
     QVERIFY2(
         completion.first().at(1).toString().isEmpty(),
@@ -496,6 +812,16 @@ void MacroTests::macroExampleAndScreenshot()
     editor->redo();
     QCOMPARE(editor->toPlainText(), result);
     QVERIFY(window.grab().save("toylisp-macro-screenshot.png"));
+    auto *restart = window.findChild<QAction *>("restartMacroInterpreterAction");
+    QVERIFY(restart);
+    auto *menu = qobject_cast<QMenu *>(restart->parent());
+    QVERIFY(menu);
+    menu->popup(window.menuBar()->mapToGlobal(
+        window.menuBar()->actionGeometry(menu->menuAction()).bottomLeft()));
+    QTest::qWait(30);
+    QVERIFY(menu->isVisible());
+    QVERIFY(menu->grab().save("toylisp-macro-actions-screenshot.png"));
+    menu->hide();
     editor->document()->setModified(false);
 }
 

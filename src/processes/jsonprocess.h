@@ -22,7 +22,11 @@ public:
 
     bool isConfigured() const;
 
-    void configure(const QString &program, const QStringList &arguments);
+    void configure(
+        const QString &program, const QStringList &arguments, bool startImmediately = true);
+
+    // Stop the worker and fail pending requests; the next call starts it again.
+    void reset(const QString &error);
 
     void call(
         const QString &method, const QJsonObject &params, QObject *context, Completion completion);

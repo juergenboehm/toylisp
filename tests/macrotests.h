@@ -1,5 +1,6 @@
 #pragma once
 
+#include "macro/pythonmacroservice.h"
 #include <QObject>
 #include <QTemporaryDir>
 
@@ -11,6 +12,7 @@ class MacroTests : public QObject
 
     QTemporaryDir settingsDirectory;
     QString python;
+    PythonMacroService service;
 
     static QString writeMacro(const QString &directory, const QString &name, const QByteArray &code);
 
@@ -34,6 +36,18 @@ private slots:
     void failuresPreserveDocument();
 
     void timeout();
+
+    void sharedRuntimeAndReload();
+
+    void softCancellationAndQueue();
+
+    void restartDiscardsRequests();
+
+    void failuresRetainRuntime();
+
+    void queueLimit();
+
+    void runtimeGeminiExample();
 
     void unrelatedEditsAndCursor();
 

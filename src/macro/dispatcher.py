@@ -18,15 +18,21 @@ def run_macro(params):
     module = types.ModuleType("_toylisp_macro")
     module.__file__ = str(path)
     sys.modules[module.__name__] = module
-    sys.path.insert(0, str(path.parent))
-    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
-    function = getattr(module, "macro", None)
-    if not callable(function):
-        raise TypeError(f"{path.name} must define a callable macro(txt)")
-    result = function(text)
-    if not isinstance(result, str):
-        raise TypeError("macro(txt) must return a string")
-    return {"text": result}
+    original_path = sys.path[:]
+    try:
+        # Keep macro_runtime ahead of per-macro helpers. Restore the path after
+        # each invocation so it does not grow or leak between macro directories.
+        sys.path.insert(1, str(path.parent))
+        exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+        function = getattr(module, "macro", None)
+        if not callable(function):
+            raise TypeError(f"{path.name} must define a callable macro(txt)")
+        result = function(text)
+        if not isinstance(result, str):
+            raise TypeError("macro(txt) must return a string")
+        return {"text": result}
+    finally:
+        sys.path[:] = original_path
 
 
 def send(message):
@@ -34,6 +40,7 @@ def send(message):
 
 
 def main():
+    sys.path.insert(0, sys.argv[1])
     send({"ready": 1})
     for line in sys.stdin:
         request_id = None

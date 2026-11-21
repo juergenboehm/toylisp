@@ -26,7 +26,8 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 
-MainWindow::MainWindow(const QString &macroDirectory)
+MainWindow::MainWindow(const QString &macroDirectory, const QString &runtimeDirectory)
+    : macroService(runtimeDirectory)
 {
     Q_INIT_RESOURCE(icons);
     setWindowTitle("ToyLisp");
@@ -60,6 +61,15 @@ MainWindow::MainWindow(const QString &macroDirectory)
     auto *file = menuBar()->addMenu("&File");
     auto *edit = menuBar()->addMenu("&Edit");
     auto *view = menuBar()->addMenu("&View");
+    auto *actions = menuBar()->addMenu("&Actions");
+    auto *restartMacros = actions->addAction("&Restart Macro Interpreter");
+    restartMacros->setObjectName("restartMacroInterpreterAction");
+    connect(restartMacros, &QAction::triggered, this, [this] {
+        for (int i = 0; i < editors->count(); ++i)
+            qobject_cast<Editor *>(editors->widget(i))->cancelMacro();
+        macroService.restart();
+        statusBar()->showMessage("Macro interpreter reset; it will start with the next macro", 10000);
+    });
     auto *normalSize = view->addAction("&Normal Size");
     normalSize->setObjectName("normalSizeAction");
     normalSize->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
@@ -197,10 +207,11 @@ MainWindow::MainWindow(const QString &macroDirectory)
     runMacroAction->setObjectName("runMacroAction");
     runMacroAction->setToolTip("Replace the selected text using the selected Python macro");
     connect(runMacroAction, &QAction::triggered, this, [this] {
-        if (auto *editor = currentEditor(); editor && macroSelector->currentIndex() >= 0)
-            editor->runMacro(
-                QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString(),
-                macroSelector->currentData().toString());
+        if (auto *editor = currentEditor(); editor && macroSelector->currentIndex() >= 0) {
+            macroService.setInterpreter(
+                QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString());
+            editor->runMacro(macroService, macroSelector->currentData().toString());
+        }
     });
     connect(macroSelector, &MacroSelector::macrosChanged, this, &MainWindow::updateMacroActivity);
     connect(
@@ -263,6 +274,7 @@ void MainWindow::choosePythonInterpreter()
         return;
     }
     settings.setValue(key, path);
+    macroService.setInterpreter(path);
 }
 
 Editor *MainWindow::currentEditor() const
@@ -310,7 +322,7 @@ void MainWindow::updateMacroActivity()
     int count = 0;
     for (int i = 0; i < editors->count(); ++i)
         count += qobject_cast<Editor *>(editors->widget(i))->macroIsRunning();
-    macroStatus->setText(count ? QString("Running macros: %1").arg(count) : QString());
+    macroStatus->setText(count ? QString("Pending macros: %1").arg(count) : QString());
 }
 
 void MainWindow::updateTitle(Editor *editor)
@@ -403,6 +415,7 @@ void MainWindow::cancelPendingWork()
         editor->cancelEvaluations();
         editor->cancelMacro();
     }
+    macroService.restart();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

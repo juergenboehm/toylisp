@@ -6,7 +6,7 @@ but a Windows build has not yet been verified.
 
 ## Current capabilities
 
-- File, Edit and View menus; bundled New, Open and Save toolbar icons.
+- File, Edit, View and Actions menus; bundled New, Open and Save toolbar icons.
 - Movable, closable editor tabs, a narrow right-hand tools placeholder, and a
   full-width bottom Output tab. Both boundaries can be resized with splitters.
 - UTF-8 text files, Save As, modified indicators and save/discard/cancel prompts.
@@ -39,7 +39,8 @@ but a Windows build has not yet been verified.
   tags and short Cologne Monier-Williams glosses.
 - A development evaluator for testing Devanagari/SLP1 transliteration locally.
 - Asynchronous Python text macros selected in the toolbar, including a local
-  Devanagari-to-IAST example. A macro replaces the current selection in one undo step.
+  Devanagari-to-IAST example. A shared interpreter retains common initialization
+  between calls; a macro replaces the current selection in one undo step.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
 Macaulay2 evaluators, configurable font families/default sizes, and additional
@@ -102,10 +103,13 @@ up to 2,000 lines of diagnostic text. Successful results appear in the document.
 
 Choose a macro in the toolbar and click **Run Macro** to replace the selected
 text in the current editor tab. The button is disabled without a selection or
-while that tab already has a running macro. Macros use the Python interpreter
+while that tab already has a pending macro. Macros use the Python interpreter
 configured under **Sanskrit → Python Interpreter…**; this shares the executable
-setting with verse analysis, while each macro invocation runs in its own process.
-A blank interpreter setting disables both features.
+setting with verse analysis. All tabs share one macro process, separate from the
+Sanskrit worker. It starts on the first macro request and remains available for
+later calls. Requests run one at a time, with up to 16 waiting requests. A blank
+interpreter setting disables both features. Changing it stops the macro process
+and fails its pending requests; the next request uses the new interpreter.
 
 Add Python files directly under `src/macro/python/`. For example, `foo.py`
 appears as **foo** in the alphabetically sorted list and must define:
@@ -122,23 +126,66 @@ Each invocation reads the current Python source, so edits and new macros require
 no application rebuild or restart. The macro directory is resolved from the
 source tree at CMake configuration time, independently of the working directory.
 Keep that directory available when running this development build; rebuild after
-moving the source tree. Macros may import helper modules from their directory.
+moving the source tree. Macros may import helper modules from their directory;
+imported helpers remain cached until the macro interpreter restarts.
+
+Shared initialization belongs in `src/macro/macro_runtime.py`, outside the
+selectable macro directory. This editable module includes a general place for
+shared helpers and the Gemini example:
+
+```python
+from google import genai
+
+client = genai.Client()
+```
+
+A macro can use the same client across successive calls and editor tabs:
+
+```python
+from macro_runtime import client
+
+def macro(txt):
+    # Use client here when adding a Gemini operation.
+    return txt
+```
+
+The runtime module is initialized on its first explicit import, once per
+interpreter. Macros that do not import it, including **devanagari_iast**, do not
+require Gemini. For the example, install `google-genai` in the configured Python
+environment and make credentials such as `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+available in ToyLisp's inherited environment. Keep credentials out of source.
+See the [Google Gen AI SDK documentation](https://googleapis.github.io/python-genai/)
+for authentication options. Initialization errors are reported as macro errors.
+
+Use **Actions → Restart Macro Interpreter** after changing the runtime or other
+imported helpers. This stops the process and cancels its running and waiting
+requests without replacing any editor text. The next macro starts a fresh process;
+the runtime is initialized again when imported. Python bytecode writes are disabled
+for the macro worker so quick source edits are read again after restarting.
 
 The UI stays responsive during processing. Results belong to the original tab
 and selection, even after switching tabs or moving the cursor. Edits before or
 after the captured selection remain possible; editing the captured text cancels
 the macro, including when that edit is later undone. Closing the tab or pressing
-Escape cancels its pending work. Closing the application cancels work before the
-save prompts. Delayed completion does not move the cursor to the original selection.
+Escape cancels its pending work. Queued macros are removed before execution. A
+macro already executing is allowed to finish and its result is discarded, preserving
+the interpreter and shared objects; later requests wait for that call to finish.
+Use the restart action to stop such a call immediately. Closing the application
+stops the worker before the save prompts. Delayed completion does not move the
+cursor to the original selection.
 Errors appear in the Output tab and status bar without changing the selected text.
 An unchanged return string leaves the document and undo history untouched.
+Undo changes document text only, not shared Python state or external API calls.
 
 The shared process transport enforces a five-second startup limit, a 40-second
 request limit and a 256 KiB limit per UTF-8 JSON protocol message, including its
 escaping and metadata. Oversized selections/results and timeouts report an error
 without partial insertion. Python exceptions, missing `macro(txt)` functions and
 non-string return values also preserve the text. Macro `print()` output is routed
-to the process diagnostics; stdout remains reserved for the protocol.
+to the process diagnostics; stdout remains reserved for the protocol. A normal
+Python exception keeps the interpreter available. A crash, timeout or invalid
+protocol response stops the process and fails pending requests. The next request
+starts a fresh interpreter; failed requests are not retried automatically.
 
 The bundled **devanagari_iast** macro uses `indic_transliteration.detect.detect`
 for script detection and `sanscript.transliterate` for IAST conversion. Install
@@ -249,9 +296,9 @@ incomplete-lookup diagnostic; the unsupported entry does not discard them.
 Install `requests` and `indic-transliteration` in a Python 3 environment and
 enter its executable under **Sanskrit → Python Interpreter…**. Enter an absolute
 path or a path starting with `~/`. ToyLisp saves the path and applies it
-immediately for new requests. The same setting is used by Python text macros;
-a blank setting disables verse analysis and macros. A running macro retains the
-interpreter with which it was started.
+immediately. The same setting is used by Python text macros; a blank setting
+disables verse analysis and macros. Changing the interpreter also resets the
+shared macro process and its runtime objects.
 
 Use `==sanskrit-verse` or select **Sanskrit Verse (Dharmamitra + MW)** in the
 default evaluator list.
@@ -457,6 +504,9 @@ transliteration, Unicode normalization, typed results, composition and cancellat
 `toylisp_macro_tests` uses Python 3 on PATH for offline fixtures. It covers toolbar
 discovery, source reload, Unicode and multiline selection replacement, empty
 results, undo/redo, Python failures, process limits, cancellation and tab lifetime.
+It also verifies shared process/module reuse across tabs, fresh macro source,
+queued request order and cancellation, restart/reset behavior and crash recovery.
+The Gemini initialization example is tested offline with a fake SDK, without API calls.
 The bundled transliteration macro is tested with the real package if available.
 Set `TOYLISP_TEST_PYTHON` to a Python executable with `indic-transliteration` to
 include those cases when the default `python3` lacks the package:
@@ -466,7 +516,7 @@ TOYLISP_TEST_PYTHON=/absolute/path/to/python ctest --test-dir build --output-on-
 ```
 
 With that package available, the macro window test also writes
-`build/toylisp-macro-screenshot.png`.
+`build/toylisp-macro-screenshot.png` and `build/toylisp-macro-actions-screenshot.png`.
 
 `toylisp_lookup_tests` covers word transliteration, recorded MW/PWG and morphology
 responses, malformed data, local HTTP requests, timeouts/limits, partial failure,
@@ -513,6 +563,8 @@ check the four-space tab stops, and reset via View → Normal Size and Ctrl+0.
 Try Line Wrap from the View menu and toolbar and check the state when switching tabs.
 Select Devanagari lines, run **devanagari_iast**, and undo/redo the insertion.
 Add or edit a macro file and reopen the combo box to check discovery and source reload.
+Run macros from different tabs, then use Actions → Restart Macro Interpreter to
+check that pending requests are cancelled and shared initialization is reset.
 Evaluate a variable assignment in one tab and use it in another, edit the input,
 reevaluate, undo, save and reopen.
 Native file dialogs and Windows behavior require platform-specific manual checks.
@@ -611,8 +663,9 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 
 - `src/app/`: startup; the main window owns the application's evaluator registry.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
-- `src/macro/`: asynchronous Python macro jobs and the bundled process dispatcher;
-  `src/macro/python/` contains the selectable macro files, including `devanagari_iast.py`.
+- `src/macro/`: the shared Python macro service, per-request jobs, bundled dispatcher
+  and editable `macro_runtime.py`; `src/macro/python/` contains selectable macro
+  files, including `devanagari_iast.py`.
 - `src/lookups/`: reusable asynchronous HTTP client (`httpclient.h` / `httpclient.cpp`).
 - `src/editor/`: widget-independent block recognition, bracket metadata highlighter
   and matching. This QtGui-based code is compiled into `toylisp_ui`;

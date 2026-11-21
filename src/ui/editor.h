@@ -7,6 +7,7 @@
 #include <QTextCursor>
 
 class PythonMacroJob;
+class PythonMacroService;
 
 class Editor : public QPlainTextEdit
 {
@@ -30,7 +31,7 @@ public:
 
     int activeEvaluationCount() const;
 
-    void runMacro(const QString &interpreter, const QString &path);
+    void runMacro(PythonMacroService &service, const QString &path);
 
     void cancelMacro();
 

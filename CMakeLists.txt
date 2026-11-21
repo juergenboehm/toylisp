@@ -23,13 +23,15 @@ add_library(toylisp_ui
         src/ui/mainwindow.cpp
         src/ui/macroselector.cpp
         src/macro/pythonmacrojob.cpp
+        src/macro/pythonmacroservice.cpp
         src/macro/macro_python.qrc
         src/editor/blocks.cpp
         src/editor/brackets.cpp
         resources/icons.qrc)
 target_link_libraries(toylisp_ui PUBLIC toylisp_sanskrit_evaluators sanskrit_qt Qt5::Widgets)
 target_compile_definitions(toylisp_ui PRIVATE
-        TOYLISP_PYTHON_MACRO_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/src/macro/python")
+        TOYLISP_PYTHON_MACRO_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/src/macro/python"
+        TOYLISP_MACRO_RUNTIME_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/src/macro")
 add_executable(toylisp src/app/main.cpp)
 target_link_libraries(toylisp PRIVATE toylisp_ui)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)

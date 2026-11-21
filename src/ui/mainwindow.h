@@ -1,6 +1,7 @@
 #pragma once
 
 #include "evaluators/evaluator.h"
+#include "macro/pythonmacroservice.h"
 #include "sanskrit/sanskrit.h"
 #include "sanskrit/sanskritserviceqt.h"
 #include <QMainWindow>
@@ -17,7 +18,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(const QString &macroDirectory = {});
+    explicit MainWindow(const QString &macroDirectory = {}, const QString &runtimeDirectory = {});
 
     ~MainWindow() override;
 
@@ -28,6 +29,7 @@ private:
     sanskrit::SanskritServiceQt sanskritService;
     sanskrit::Sanskrit sanskrit{sanskritService};
     EvaluatorRegistry registry;
+    PythonMacroService macroService;
     QTabWidget *editors;
     QPlainTextEdit *output;
     QLabel *lookupStatus;

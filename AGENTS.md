@@ -11,8 +11,8 @@ editor remains planned.
 
 - `src/app/`: application entry point.
 - `src/ui/`: main window, text editors, menus and file dialogs.
-- `src/macro/`: asynchronous Python macro jobs and the bundled dispatcher;
-  `src/macro/python/` contains selectable `macro(txt)` Python files.
+- `src/macro/`: shared Python macro service, per-request jobs, bundled dispatcher
+  and editable `macro_runtime.py`; `src/macro/python/` contains selectable macros.
 - `src/editor/`: widget-independent QtGui block operations and a bracket highlighter
   with metadata-based matching; both are built into `toylisp_ui`.
 - `src/evaluators/`: shared evaluator interface, result, job and registry.
@@ -113,11 +113,31 @@ The toolbar lists `src/macro/python/*.py` by basename in alphabetical order and
 refreshes on opening; preserve the selected file when possible. CMake embeds the
 source directory's absolute path, so launching from another working directory works.
 Each invocation compiles the current source directly, avoiding stale bytecode after
-rapid edits. The dispatcher is bundled as a Qt resource. Use the saved Sanskrit
-Python interpreter path, with one separate asynchronous process per invocation and
-at most one active macro per editor. Keep the process protocol on stdout and route
-macro prints to stderr. Retain the transport's startup, timeout and message limits
-(five seconds, 40 seconds and 256 KiB per JSON message).
+rapid edits. The dispatcher is bundled as a Qt resource. One application-owned
+`PythonMacroService` uses the saved Sanskrit interpreter path with a persistent,
+asynchronous process separate from Sanskrit's worker. Configure it lazily: start
+only on the first request, share it across tabs and run requests serially. Permit
+at most one pending macro per editor and 16 queued requests across tabs. Keep the
+protocol on stdout and route prints to stderr. Retain startup, timeout and message
+limits (five seconds, 40 seconds and 256 KiB per JSON message).
+
+`src/macro/macro_runtime.py` is outside the selectable macro directory. Import it
+only when a macro explicitly requests it; successful imports and shared objects
+remain cached across calls. It contains a general initialization scaffold and
+the `from google import genai; client = genai.Client()` example. Gemini macros
+require google-genai and credentials in the inherited environment; keep keys out
+of source and never contact Gemini in offline tests. Unrelated macros must work
+without the SDK or credentials. The worker disables bytecode writes, retains a
+stable import path and reloads only each requested macro's source. Shared helpers
+and runtime edits take effect after Actions → Restart Macro Interpreter.
+
+Normal cancellation removes queued work and discards an executing macro's reply
+while letting its Python call finish. Preserve the process and its shared state;
+other requests wait until it finishes. The restart action cancels all editor jobs,
+stops the worker, clears the queue and starts afresh on the next request. Changing
+the configured interpreter also resets the worker. A normal Python exception
+retains runtime state; a crash, timeout or malformed protocol reply fails pending
+requests and restarts only on demand. Never automatically retry API calls.
 
 Pass the current selection with LF line breaks to `macro(txt)` and require a string
 return value. An empty string deletes the selection. Replace the captured range in
@@ -125,7 +145,7 @@ one undo operation; identity results preserve modified state and undo history.
 Track range offsets across unrelated edits, cancel any edit overlapping the captured
 text, and revalidate the original selection before insertion. Switching tabs or
 moving the cursor must not retarget the result or move the user's cursor back.
-Cancel on tab/application close and Escape; cancel application work before modal save
+Cancel on tab close and Escape; stop the application worker before modal save
 prompts. Errors go to the Output tab/status bar and preserve the document. Disable
 Run Macro without a selection, without available macros or while its tab is busy.
 
@@ -136,6 +156,9 @@ Reject mixed-script letters and ASCII digits, retaining nonmatching and empty li
 Preserve line endings, final virama and vowel length. Macro tests use Python 3 on PATH;
 `TOYLISP_TEST_PYTHON` can select an interpreter with the real transliteration package.
 Only the package-dependent probe cases are skipped when it is unavailable.
+Cover cross-tab runtime reuse, source reload, queue ordering/limits, soft cancellation,
+explicit restart and interpreter changes, error/crash/timeout recovery, and the real
+runtime file with a fake Gemini SDK. Document undo does not undo shared Python state.
 
 Lisp500 remains independent of the Qt evaluator registry. Preserve the existing
 interpreter function and variable names. Its two-word headers, allocations and

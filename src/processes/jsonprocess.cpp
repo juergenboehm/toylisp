@@ -7,7 +7,7 @@ constexpr int maxMessageBytes = 256 * 1024;
 constexpr int maxDiagnosticBytes = 4096;
 constexpr int maxQueuedRequests = 16;
 constexpr int startupTimeoutMs = 5000;
-}
+} // namespace
 
 JsonProcess::JsonProcess(int requestTimeoutMs)
     : requestTimeoutMs(requestTimeoutMs)
@@ -34,14 +34,21 @@ bool JsonProcess::isConfigured() const
     return !program.isEmpty();
 }
 
-void JsonProcess::configure(const QString &newProgram, const QStringList &newArguments)
+void JsonProcess::configure(
+    const QString &newProgram, const QStringList &newArguments, bool startImmediately)
 {
     if (program == newProgram && arguments == newArguments)
         return;
     program = newProgram;
     arguments = newArguments;
     fail("Process configuration changed");
-    start();
+    if (startImmediately)
+        start();
+}
+
+void JsonProcess::reset(const QString &error)
+{
+    fail(error);
 }
 
 void JsonProcess::start()
@@ -57,11 +64,14 @@ void JsonProcess::start()
         readDiagnostics();
         fail(child->errorString());
     });
-    connect(child, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-            [this](int code, QProcess::ExitStatus) {
-                readDiagnostics();
-                fail(QString("Process exited (code %1)").arg(code));
-            });
+    connect(
+        child,
+        QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+        this,
+        [this](int code, QProcess::ExitStatus) {
+            readDiagnostics();
+            fail(QString("Process exited (code %1)").arg(code));
+        });
 
     timer.start(startupTimeoutMs);
     child->start(program, arguments);
@@ -143,7 +153,8 @@ void JsonProcess::readOutput()
         const auto result = message.value("result");
         const auto error = message.value("error");
         const bool success = result.isObject() && error.isUndefined();
-        const bool failure = error.isString() && !error.toString().isEmpty() && result.isUndefined();
+        const bool failure = error.isString() && !error.toString().isEmpty()
+                             && result.isUndefined();
         if (!active || message.value("id") != QJsonValue(active->id) || !(success || failure)) {
             fail("Invalid process response");
             return;
@@ -178,8 +189,11 @@ void JsonProcess::fail(const QString &error)
         if (child->state() == QProcess::NotRunning) {
             child->deleteLater();
         } else {
-            connect(child, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), child,
-                    &QObject::deleteLater);
+            connect(
+                child,
+                QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                child,
+                &QObject::deleteLater);
             connect(child, &QProcess::errorOccurred, child, [child](QProcess::ProcessError code) {
                 if (code == QProcess::FailedToStart)
                     child->deleteLater();
