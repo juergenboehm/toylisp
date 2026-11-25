@@ -4,7 +4,8 @@
 
 ToyLisp is a C++17 / Qt5 Widgets desktop application built with CMake. Linux is
 its initial target; Windows compatibility is intended but unverified. Arithmetic
-and asynchronous Sanskrit word lookup, verse analysis and Python text macros are implemented.
+and asynchronous Sanskrit word lookup, verse analysis, Python text macros and Macro
+block evaluation are implemented.
 Identity, Lisp and Macaulay2 remain planned capabilities.
 The standalone Lisp500 CLI has a Linux LP64 port; Lisp integration into the Qt
 editor remains planned.
@@ -12,11 +13,14 @@ editor remains planned.
 - `src/app/`: application entry point.
 - `src/ui/`: main window, text editors, menus and file dialogs.
 - `src/macro/`: shared Python macro service, per-request jobs, bundled dispatcher
-  and editable `macro_runtime.py`; `src/macro/python/` contains selectable macros.
+  and editable `macro_runtime.py`; `src/macro/python/` contains selectable macros,
+  including Sanskrit lookup and verse. `src/macro/sanskrit_macros/` contains their
+  independent, standard-library-only Python implementation.
 - `src/editor/`: widget-independent QtGui block operations and a bracket highlighter
   with metadata-based matching; both are built into `toylisp_ui`.
 - `src/evaluators/`: shared evaluator interface, result, job and registry.
 - `src/evaluators/arith/`: arithmetic parser, evaluator and persistent environment.
+- `src/evaluators/macro/`: asynchronous Macro evaluator using the shared macro worker.
 - `src/evaluators/lisp500/`: unchanged `lisp500a.c` / `init500.lisp` originals and
   standalone `lisp500a64.c` / `init500_64.lisp` Linux LP64 ports; Qt integration
   remains planned.
@@ -30,6 +34,7 @@ editor remains planned.
   and a native FASL fixture.
 - `resources/`: bundled toolbar SVG icons.
 - `README.md`: supported behavior, limitations, setup and commands.
+- `toylisp.md`: short German guide for Sanskrit students, with Python macros and Linux setup.
 
 Update README.md and this file with each relevant change in project progress,
 layout, commands or capabilities. Clearly distinguish implemented and planned work.
@@ -108,18 +113,37 @@ QT_QPA_PLATFORM=offscreen ./build/toylisp_bracket_benchmarks
 
 ## Architecture and behavior
 
-Python text macros are independent of evaluation markers and the evaluator registry.
+Python text macros support selection replacement and evaluation blocks through the
+registered Macro evaluator (`==macro`, or the Macro global default). The evaluator
+passes block input to the selected macro and inserts its string result through the
+normal block replacement/undo/cancellation logic. Keep the previous C++ Sanskrit
+evaluators registered and functional under `==sanskrit` and `==sanskrit-verse` for
+comparison; removal is deferred. Capture the selected macro path at submission.
 The toolbar lists `src/macro/python/*.py` by basename in alphabetical order and
 refreshes on opening; preserve the selected file when possible. CMake embeds the
 source directory's absolute path, so launching from another working directory works.
 Each invocation compiles the current source directly, avoiding stale bytecode after
 rapid edits. The dispatcher is bundled as a Qt resource. One application-owned
-`PythonMacroService` uses the saved Sanskrit interpreter path with a persistent,
+`PythonMacroService` uses the saved shared interpreter path with a persistent,
 asynchronous process separate from Sanskrit's worker. Configure it lazily: start
 only on the first request, share it across tabs and run requests serially. Permit
 at most one pending macro per editor and 16 queued requests across tabs. Keep the
 protocol on stdout and route prints to stderr. Retain startup, timeout and message
-limits (five seconds, 40 seconds and 256 KiB per JSON message).
+limits (five seconds, 360 seconds and 256 KiB per JSON message). The interpreter
+setting lives under Macros → Python Interpreter; retain the existing saved key/path
+and apply it to the independent legacy Sanskrit worker as well.
+
+The dispatcher provides `from macro_context import get_context` independently of
+editable macro_runtime and optional SDKs. Supply a read-only per-request mapping
+with `result_language` (`de`/`en`) and `dictionary` (`pwg`/`mw`), captured before
+queueing. Cached helpers must read the current context inside each call. Both
+Sanskrit macros honor the saved PWG/MW setting; the legacy C++ verse evaluator
+continues to use MW. Selection and block macros share worker state, queue limits
+and one pending macro per editor; restart cancels both kinds of editor jobs.
+Python Sanskrit helpers retain exact spelling, morphology, TEI extraction, partial
+results, exact MW subentry/PWG record matching and reference/candidate limits.
+Use verified default TLS, bounded responses and timeouts without retries. Their
+offline Python tests require only Python 3 and are registered when CMake finds it.
 
 `src/macro/macro_runtime.py` is outside the selectable macro directory. Import it
 only when a macro explicitly requests it; successful imports and shared objects
@@ -247,7 +271,7 @@ and tags. Use the same formatting for all supplied tags, show empty tags as
 `Unspecified` and send the supplied lemmata in SLP1 to the shared Cologne MW
 headword and TEI code. Keep the response across the process channel compact.
 Dictionary errors retain Padapāṭha, grammar and any available glosses. The interpreter
-is configured under Sanskrit → Python Interpreter and requires `requests` and
+is configured under Macros → Python Interpreter and requires `requests` and
 `indic-transliteration`. Keep user-specific paths out of source. Start one
 configured worker asynchronously, reserve stdout for UTF-8 JSON lines and
 route stderr separately. Match request IDs, bound queued requests, time and

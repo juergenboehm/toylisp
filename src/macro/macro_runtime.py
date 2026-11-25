@@ -14,5 +14,11 @@ import it, including devanagari_iast, do not need the Gemini SDK or credentials.
 # genai.Client() uses the credentials inherited from ToyLisp's environment,
 # for example GEMINI_API_KEY or GOOGLE_API_KEY. Do not put keys in this file.
 from google import genai
+from ollama import Client
 
 client = genai.Client()
+
+
+client_o = Client(
+    host="http://127.0.0.1:11434",
+)

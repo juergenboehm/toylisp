@@ -43,7 +43,7 @@ QString diagnosticText(const Diagnostic &diagnostic, Dictionary dictionary)
         return devanagari(diagnostic.headwordSlp1) + " (PWG reference): " + message;
     case Stage::Analysis:
         if (diagnostic.issue == Issue::NotConfigured)
-            return "Set a Python interpreter under Sanskrit → Python Interpreter…";
+            return "Set a Python interpreter under Macros → Python Interpreter…";
         return "Sanskrit verse analysis: " + message;
     case Stage::Input:
         return message;

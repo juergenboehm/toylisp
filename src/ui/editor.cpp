@@ -55,16 +55,20 @@ Editor::~Editor()
 
 bool Editor::macroIsRunning() const
 {
-    return pendingMacro != nullptr;
+    if (pendingMacro)
+        return true;
+    for (const auto &pending : pendingEvaluations) {
+        if (pending->macroEvaluation)
+            return true;
+    }
+    return false;
 }
 
 void Editor::runMacro(PythonMacroService &service, const QString &path)
 {
     const auto cursor = textCursor();
-    if (!cursor.hasSelection() || isReadOnly())
+    if (!cursor.hasSelection() || isReadOnly() || macroIsRunning())
         return;
-    cancelMacro();
-
     auto *job = new PythonMacroJob(service, this);
     pendingMacro = std::make_unique<PendingMacro>();
     pendingMacro->job = job;
@@ -88,14 +92,30 @@ void Editor::runMacro(PythonMacroService &service, const QString &path)
 
 void Editor::cancelMacro()
 {
-    if (!pendingMacro)
-        return;
-    if (auto *job = pendingMacro->job.data()) {
-        job->cancel();
-        job->deleteLater();
+    bool changed = false;
+    const auto evaluations = pendingEvaluations;
+    for (const auto &pending : evaluations) {
+        if (!pending->macroEvaluation)
+            continue;
+        pendingEvaluations.removeOne(pending);
+        if (pending->job) {
+            pending->job->cancel();
+            pending->job->deleteLater();
+        }
+        changed = true;
     }
-    pendingMacro.reset();
-    emit macroActivityChanged();
+    if (changed)
+        emit evaluationActivityChanged();
+    if (pendingMacro) {
+        if (auto *job = pendingMacro->job.data()) {
+            job->cancel();
+            job->deleteLater();
+        }
+        pendingMacro.reset();
+        changed = true;
+    }
+    if (changed)
+        emit macroActivityChanged();
 }
 
 void Editor::trackMacroSelection(int position, int removed, int added)
@@ -152,8 +172,10 @@ void Editor::cancelEvaluations()
         }
     }
 
-    if (!pending.isEmpty())
+    if (!pending.isEmpty()) {
         emit evaluationActivityChanged();
+        emit macroActivityChanged();
+    }
 }
 
 bool Editor::evaluationIsCurrent(const PendingEvaluation &pending) const
@@ -185,8 +207,10 @@ void Editor::discardChangedEvaluations()
         }
     }
 
-    if (changed)
+    if (changed) {
         emit evaluationActivityChanged();
+        emit macroActivityChanged();
+    }
 }
 
 void Editor::completeEvaluation(const std::shared_ptr<PendingEvaluation> &pending, bool immediate)
@@ -218,6 +242,8 @@ void Editor::completeEvaluation(const std::shared_ptr<PendingEvaluation> &pendin
         job->deleteLater();
     discardChangedEvaluations();
     emit evaluationActivityChanged();
+    if (pending->macroEvaluation)
+        emit macroActivityChanged();
 }
 
 bool Editor::load(const QString &path, QString &error)
@@ -290,10 +316,26 @@ void Editor::keyPressEvent(QKeyEvent *event)
             return;
         }
 
+        const bool macroEvaluation
+            = (block.evaluator.isEmpty() ? registry.defaultName : block.evaluator) == "macro";
+        if (macroEvaluation) {
+            bool busy = pendingMacro != nullptr;
+            for (const auto &pending : pendingEvaluations) {
+                busy = busy
+                       || (pending->macroEvaluation && pending->marker.block() != cursor.block());
+            }
+            if (busy) {
+                emit diagnostic("A macro is already pending in this tab");
+                return;
+            }
+        }
+
         // Re-evaluation supersedes the previous request for this marker only.
+        bool supersededMacro = false;
         const auto previous = pendingEvaluations;
         for (const auto &pending : previous) {
             if (pending->marker.block() == cursor.block()) {
+                supersededMacro = supersededMacro || pending->macroEvaluation;
                 pendingEvaluations.removeOne(pending);
                 if (pending->job) {
                     pending->job->cancel();
@@ -309,6 +351,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
         pending->input = block.input;
         pending->evaluator = block.evaluator;
         pending->output = outputText(document(), block);
+        pending->macroEvaluation = macroEvaluation;
 
         pending->job = registry.startEvaluation(block.evaluator, block.input, this);
         pendingEvaluations.append(pending);
@@ -318,8 +361,13 @@ void Editor::keyPressEvent(QKeyEvent *event)
 
         if (pending->job->isFinished())
             completeEvaluation(pending, true);
-        else
+        else {
             emit evaluationActivityChanged();
+            if (macroEvaluation)
+                emit macroActivityChanged();
+        }
+        if (supersededMacro && !macroEvaluation)
+            emit macroActivityChanged();
         return;
     }
 

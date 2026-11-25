@@ -19,6 +19,7 @@ add_library(toylisp_sanskrit_evaluators
         src/evaluators/test/testevaluator.cpp)
 target_link_libraries(toylisp_sanskrit_evaluators PUBLIC toylisp_core sanskrit)
 add_library(toylisp_ui
+        src/evaluators/macro/macroevaluator.cpp
         src/ui/editor.cpp
         src/ui/mainwindow.cpp
         src/ui/macroselector.cpp
@@ -44,6 +45,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif ()
 include(CTest)
 if (BUILD_TESTING)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if (Python3_Interpreter_FOUND)
+        add_test(NAME toylisp_sanskrit_macro_tests
+                COMMAND ${Python3_EXECUTABLE} -I -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/sanskritmacrotests.py)
+    endif ()
     find_package(Qt5 5.12 REQUIRED COMPONENTS Test)
     add_executable(toylisp_tests tests/tests.cpp)
     target_link_libraries(toylisp_tests PRIVATE toylisp_ui Qt5::Test)

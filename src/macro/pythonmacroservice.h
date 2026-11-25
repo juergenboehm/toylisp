@@ -6,11 +6,13 @@
 class PythonMacroService : public QObject
 {
 public:
-    explicit PythonMacroService(const QString &runtimeDirectory = {}, int timeoutMs = 40000);
+    explicit PythonMacroService(const QString &runtimeDirectory = {}, int timeoutMs = 360000);
 
     ~PythonMacroService() override;
 
     void setInterpreter(const QString &interpreter);
+
+    void setResultLanguage(const QString &language);
 
     void restart();
 
@@ -26,5 +28,6 @@ private:
     JsonProcess worker;
     QString runtimeDirectory;
     QString interpreter;
+    QString resultLanguage = "de";
     QString dispatcher;
 };

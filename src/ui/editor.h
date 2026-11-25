@@ -60,6 +60,7 @@ private:
         QString evaluator;
         QString markerText;
         QString output;
+        bool macroEvaluation = false;
     };
 
     QList<std::shared_ptr<PendingEvaluation>> pendingEvaluations;

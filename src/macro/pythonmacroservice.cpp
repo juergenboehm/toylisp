@@ -34,11 +34,16 @@ void PythonMacroService::restart()
     worker.reset("Macro interpreter restarted");
 }
 
+void PythonMacroService::setResultLanguage(const QString &language)
+{
+    resultLanguage = language == "en" ? "en" : "de";
+}
+
 void PythonMacroService::call(
     const QString &path, const QString &text, QObject *context, JsonProcess::Completion completion)
 {
     if (interpreter.isEmpty()) {
-        completion({}, "Set a Python interpreter under Sanskrit → Python Interpreter…");
+        completion({}, "Set a Python interpreter under Macros → Python Interpreter…");
         return;
     }
     if (dispatcher.isEmpty()) {
@@ -47,7 +52,10 @@ void PythonMacroService::call(
     }
     worker.call(
         "macro.run",
-        {{"path", QFileInfo(path).absoluteFilePath()}, {"text", text}},
+        {{"path", QFileInfo(path).absoluteFilePath()},
+         {"text", text},
+         {"context", QJsonObject{{"result_language", resultLanguage},
+                                 {"dictionary", resultLanguage == "en" ? "mw" : "pwg"}}}},
         context,
         std::move(completion));
 }

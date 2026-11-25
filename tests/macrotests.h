@@ -18,12 +18,24 @@ class MacroTests : public QObject
 
     static void select(Editor &editor, int start, int end);
 
+    static void evaluateBlock(Editor &editor, const QString &marker = "==macro");
+
 private slots:
     void initTestCase();
 
     void init();
 
     void toolbarDiscoveryAndReload();
+
+    void evaluatorReplacementAndUndo_data();
+
+    void evaluatorReplacementAndUndo();
+
+    void evaluatorFailures();
+
+    void evaluatorSelectionAndContextSnapshot();
+
+    void evaluatorCancellationAndRestart();
 
     void replacementAndUndo_data();
 

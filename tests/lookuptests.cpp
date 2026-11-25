@@ -15,6 +15,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenu>
 #include <QPointer>
 #include <QSettings>
 #include <QStandardPaths>
@@ -258,6 +259,9 @@ void LookupTests::pythonInterpreterMenuAndPersistence()
     const auto setInterpreter = [&](MainWindow &window, const QString &path) {
         auto *action = window.findChild<QAction *>("pythonInterpreterAction");
         QVERIFY(action);
+        auto *menu = qobject_cast<QMenu *>(action->parent());
+        QVERIFY(menu);
+        QCOMPARE(menu->title(), QString("&Macros"));
         QTimer::singleShot(0, &window, [&] {
             auto *dialog = qobject_cast<QInputDialog *>(QApplication::activeModalWidget());
             if (dialog) {

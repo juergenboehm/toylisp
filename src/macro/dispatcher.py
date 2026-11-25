@@ -1,11 +1,22 @@
 """Run Python text macros; stdout is reserved for the JSON-line protocol."""
 
 import contextlib
+from contextvars import ContextVar
 import json
 from pathlib import Path
 import sys
 import traceback
 import types
+
+
+_context = ContextVar("macro_context", default=types.MappingProxyType({
+    "result_language": "de", "dictionary": "pwg",
+}))
+# This module belongs to the protocol, independently of editable macro_runtime
+# and its optional SDKs. Imported accessors always read the current request.
+context_module = types.ModuleType("macro_context")
+context_module.get_context = _context.get
+sys.modules["macro_context"] = context_module
 
 
 def run_macro(params):
@@ -19,6 +30,7 @@ def run_macro(params):
     module.__file__ = str(path)
     sys.modules[module.__name__] = module
     original_path = sys.path[:]
+    token = _context.set(types.MappingProxyType(dict(params.get("context", _context.get()))))
     try:
         # Keep macro_runtime ahead of per-macro helpers. Restore the path after
         # each invocation so it does not grow or leak between macro directories.
@@ -32,6 +44,7 @@ def run_macro(params):
             raise TypeError("macro(txt) must return a string")
         return {"text": result}
     finally:
+        _context.reset(token)
         sys.path[:] = original_path
 
 

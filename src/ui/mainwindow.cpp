@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "editor.h"
+#include "evaluators/macro/macroevaluator.h"
 #include "evaluators/sanskrit/sanskritevaluator.h"
 #include "evaluators/test/testevaluator.h"
 #include "macroselector.h"
@@ -97,9 +98,14 @@ MainWindow::MainWindow(const QString &macroDirectory, const QString &runtimeDire
     registry.addEvaluator("sanskrit", std::move(wordEvaluator));
     registry.addEvaluator("sanskrit-verse", std::make_unique<SanskritVerseEvaluator>(sanskrit));
     registry.addEvaluator("test", std::make_unique<TestEvaluator>());
+    auto evaluator = std::make_unique<MacroEvaluator>(macroService);
+    macroEvaluator = evaluator.get();
+    registry.addEvaluator("macro", std::move(evaluator));
 
     auto *sanskritMenu = menuBar()->addMenu("&Sanskrit");
-    auto *python = sanskritMenu->addAction("&Python Interpreter…");
+    auto *macrosMenu = menuBar()->addMenu("&Macros");
+    macrosMenu->setObjectName("macrosMenu");
+    auto *python = macrosMenu->addAction("&Python Interpreter…");
     python->setObjectName("pythonInterpreterAction");
     connect(python, &QAction::triggered, this, &MainWindow::choosePythonInterpreter);
 
@@ -116,12 +122,15 @@ MainWindow::MainWindow(const QString &macroDirectory, const QString &runtimeDire
         languageGroup->addAction(action);
         const bool selected = code == savedLanguage || (german && savedLanguage != "en");
         action->setChecked(selected);
-        if (selected)
+        if (selected) {
             sanskritEvaluator->setDictionary(
                 german ? sanskrit::Dictionary::Pwg : sanskrit::Dictionary::Mw);
-        connect(action, &QAction::triggered, this, [sanskritEvaluator, code, german] {
+            macroService.setResultLanguage(code);
+        }
+        connect(action, &QAction::triggered, this, [this, sanskritEvaluator, code, german] {
             sanskritEvaluator->setDictionary(
                 german ? sanskrit::Dictionary::Pwg : sanskrit::Dictionary::Mw);
+            macroService.setResultLanguage(code);
             QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/resultLanguage", code);
         });
     }
@@ -187,6 +196,7 @@ MainWindow::MainWindow(const QString &macroDirectory, const QString &runtimeDire
     toolbar->addWidget(new QLabel(" Default evaluator: ", toolbar));
     auto *selector = new QComboBox(toolbar);
     selector->addItem("Arithmetic", "arith");
+    selector->addItem("Macro", "macro");
     selector->addItem("Sanskrit Lookup", "sanskrit");
     selector->addItem("Sanskrit Verse (Dharmamitra + MW)", "sanskrit-verse");
     selector->addItem("Test", "test");
@@ -230,8 +240,10 @@ MainWindow::MainWindow(const QString &macroDirectory, const QString &runtimeDire
     statusBar()->addPermanentWidget(macroStatus);
     addEditor();
 
-    const QString pythonError = sanskritService.setPythonInterpreter(
-        QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString());
+    const QString interpreter
+        = QSettings("ToyLisp", "ToyLisp").value("sanskrit/pythonInterpreter").toString();
+    macroService.setInterpreter(interpreter);
+    const QString pythonError = sanskritService.setPythonInterpreter(interpreter);
     if (!pythonError.isEmpty())
         statusBar()->showMessage(pythonError);
 }
@@ -249,9 +261,10 @@ void MainWindow::choosePythonInterpreter()
     QString path = QInputDialog::getText(
                        this,
                        "Python Interpreter",
-                       "Path to Python with requests and indic-transliteration installed.\n"
-                       "Also used for Python text macros.\n"
-                       "Leave blank to disable verse analysis and macros.",
+                       "Python executable for macros and legacy Sanskrit verse analysis.\n"
+                       "Install the packages required by your chosen macros; legacy verse\n"
+                       "analysis needs requests and indic-transliteration.\n"
+                       "Leave blank to disable macros and legacy verse analysis.",
                        QLineEdit::Normal,
                        settings.value(key).toString(),
                        &accepted)
@@ -272,6 +285,10 @@ void MainWindow::choosePythonInterpreter()
     if (!error.isEmpty()) {
         QMessageBox::warning(this, "Python Interpreter", error);
         return;
+    }
+    if (path != settings.value(key).toString()) {
+        for (int i = 0; i < editors->count(); ++i)
+            qobject_cast<Editor *>(editors->widget(i))->cancelMacro();
     }
     settings.setValue(key, path);
     macroService.setInterpreter(path);
@@ -309,11 +326,12 @@ void MainWindow::updateEvaluationActivity()
     int count = 0;
     for (int i = 0; i < editors->count(); ++i)
         count += qobject_cast<Editor *>(editors->widget(i))->activeEvaluationCount();
-    lookupStatus->setText(count ? QString("Pending lookups: %1").arg(count) : QString());
+    lookupStatus->setText(count ? QString("Pending evaluations: %1").arg(count) : QString());
 }
 
 void MainWindow::updateMacroActivity()
 {
+    macroEvaluator->setMacro(macroSelector->currentData().toString());
     const auto *editor = currentEditor();
     runMacroAction->setEnabled(
         editor && editor->textCursor().hasSelection() && !editor->isReadOnly()

@@ -1,4 +1,5 @@
 #include "macrotests.h"
+#include "evaluators/macro/macroevaluator.h"
 #include "macro/pythonmacrojob.h"
 #include "ui/editor.h"
 #include "ui/macroselector.h"
@@ -33,6 +34,16 @@ void MacroTests::select(Editor &editor, int start, int end)
     cursor.setPosition(start);
     cursor.setPosition(end, QTextCursor::KeepAnchor);
     editor.setTextCursor(cursor);
+}
+
+void MacroTests::evaluateBlock(Editor &editor, const QString &marker)
+{
+    QTextCursor cursor(editor.document());
+    const int position = editor.toPlainText().indexOf(marker);
+    QVERIFY(position >= 0);
+    cursor.setPosition(position + marker.size());
+    editor.setTextCursor(cursor);
+    QTest::keyClick(&editor, Qt::Key_Return);
 }
 
 void MacroTests::initTestCase()
@@ -106,6 +117,201 @@ void MacroTests::toolbarDiscoveryAndReload()
     QCOMPARE(selector->count(), 0);
     QVERIFY(!action->isEnabled());
     selector->hidePopup();
+}
+
+void MacroTests::evaluatorReplacementAndUndo_data()
+{
+    QTest::addColumn<QString>("replacement");
+    QTest::newRow("unicode-multiline") << QString::fromUtf8("rāma राम\nsecond");
+    QTest::newRow("empty") << QString();
+    QTest::newRow("trailing-newline") << QString("first\n");
+}
+
+void MacroTests::evaluatorReplacementAndUndo()
+{
+    QFETCH(QString, replacement);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QByteArray literal
+        = QJsonDocument(QJsonArray{replacement}).toJson(QJsonDocument::Compact);
+    const QString path = writeMacro(
+        directory.path(), "block",
+        QByteArray("def macro(txt):\n    assert txt == 'राम\\nend'\n    return ") + literal
+            + "[0]\n");
+    EvaluatorRegistry registry;
+    auto evaluator = std::make_unique<MacroEvaluator>(service);
+    evaluator->setMacro(path);
+    registry.addEvaluator("macro", std::move(evaluator));
+    Editor editor(registry);
+    const QString before = "before\n>>\nराम\nend\n==macro\nold\n##\ntail\n>>\n1+2\n==arith\n3\n##";
+    editor.setPlainText(before);
+    evaluateBlock(editor);
+    QVERIFY(editor.macroIsRunning());
+    QVERIFY(editor.activeEvaluationCount() == 1);
+    editor.moveCursor(QTextCursor::Start);
+    QTRY_VERIFY(!editor.macroIsRunning());
+    const QString after = "before\n>>\nराम\nend\n==macro\n" + replacement
+                          + (replacement.isEmpty() ? "" : "\n")
+                          + "##\ntail\n>>\n1+2\n==arith\n3\n##";
+    QCOMPARE(editor.toPlainText(), after);
+    QCOMPARE(editor.textCursor().position(), 0);
+    editor.undo();
+    QCOMPARE(editor.toPlainText(), before);
+    QVERIFY(!editor.document()->isModified());
+    editor.redo();
+    QCOMPARE(editor.toPlainText(), after);
+}
+
+void MacroTests::evaluatorFailures()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    EvaluatorRegistry registry;
+    auto evaluator = std::make_unique<MacroEvaluator>(service);
+    auto *macro = evaluator.get();
+    registry.addEvaluator("macro", std::move(evaluator));
+    Editor editor(registry);
+    QSignalSpy diagnostics(&editor, &Editor::diagnostic);
+    editor.setPlainText(">>\ninput\n==macro\nold\n##");
+    evaluateBlock(editor);
+    QVERIFY(editor.toPlainText().contains("Select a Python macro in the toolbar\n##"));
+    QCOMPARE(diagnostics.size(), 1);
+    const QString path = writeMacro(directory.path(), "bad", "def macro(txt): return 42\n");
+    macro->setMacro(path);
+    editor.setPlainText(">>\ninput\n==macro\nold\n##");
+    evaluateBlock(editor);
+    QTRY_VERIFY(!editor.macroIsRunning());
+    QVERIFY(editor.toPlainText().contains(
+        "Macro failed: TypeError: macro(txt) must return a string\n##"));
+    QCOMPARE(diagnostics.size(), 2);
+    editor.undo();
+    QCOMPARE(editor.toPlainText(), QString(">>\ninput\n==macro\nold\n##"));
+}
+
+void MacroTests::evaluatorSelectionAndContextSnapshot()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QDir root(directory.path());
+    QVERIFY(root.mkdir("python"));
+    writeMacro(directory.path(), "macro_runtime",
+               "from macro_context import get_context\ncount = 0\n"
+               "def context():\n    c = get_context()\n"
+               "    return c['result_language'] + ':' + c['dictionary']\n");
+    const QByteArray code
+        = "import time\nfrom pathlib import Path\nimport macro_runtime as runtime\n"
+          "def macro(txt):\n    runtime.count += 1\n    if txt == 'hold':\n"
+          "        Path(__file__).with_suffix('.started').touch()\n        time.sleep(0.5)\n"
+          "    return 'LABEL:' + str(runtime.count) + ':' + runtime.context()\n";
+    writeMacro(root.filePath("python"), "a", QByteArray(code).replace("LABEL", "a"));
+    writeMacro(root.filePath("python"), "b", QByteArray(code).replace("LABEL", "b"));
+    QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/pythonInterpreter", python);
+    MainWindow window(root.filePath("python"), directory.path());
+    auto *first = window.findChild<Editor *>();
+    auto *tabs = qobject_cast<QTabWidget *>(first->parentWidget()->parentWidget());
+    auto *selector = window.findChild<MacroSelector *>("macroSelector");
+    auto *evaluators = window.findChild<QComboBox *>("evaluatorSelector");
+    QVERIFY(evaluators->findData("sanskrit") >= 0);
+    QVERIFY(evaluators->findData("sanskrit-verse") >= 0);
+    QCOMPARE(evaluators->itemText(evaluators->findData("macro")), QString("Macro"));
+    auto *run = window.findChild<QAction *>("runMacroAction");
+    first->setPlainText("seed");
+    first->selectAll();
+    run->trigger();
+    QTRY_COMPARE(first->toPlainText(), QString("a:1:de:pwg"));
+    first->setPlainText(">>\nhold\n==macro\nold\n##");
+    evaluateBlock(*first);
+    QTRY_VERIFY(QFile::exists(root.filePath("python/a.started")));
+    for (auto *action : window.findChildren<QAction *>()) {
+        if (action->shortcut() == QKeySequence::New)
+            action->trigger();
+    }
+    auto *second = qobject_cast<Editor *>(tabs->currentWidget());
+    QVERIFY(second != first);
+    window.findChild<QAction *>("sanskritLanguage_en")->trigger();
+    second->setPlainText(">>\nqueued\n==macro\nold\n##");
+    evaluateBlock(*second);
+    QVERIFY(second->macroIsRunning());
+    QCOMPARE(window.findChild<QLabel *>("macroStatus")->text(), QString("Pending macros: 2"));
+    selector->setCurrentIndex(selector->findText("b"));
+    window.findChild<QAction *>("sanskritLanguage_de")->trigger();
+    QTRY_VERIFY(!second->macroIsRunning());
+    QVERIFY(first->toPlainText().contains("==macro\na:2:de:pwg\n##"));
+    QVERIFY(second->toPlainText().contains("==macro\na:3:en:mw\n##"));
+    // A bare marker also uses Macro when it is the global default.
+    evaluators->setCurrentIndex(evaluators->findData("macro"));
+    second->setPlainText(">>\nnext\n==\nold\n##");
+    evaluateBlock(*second, "==");
+    QTRY_VERIFY(!second->macroIsRunning());
+    QVERIFY(second->toPlainText().contains("==\nb:4:de:pwg\n##"));
+    // Changing the default and reevaluating the same bare marker supersedes Macro.
+    first->setPlainText(">>\nhold\n==\nold\n##");
+    evaluateBlock(*first, "==");
+    QTRY_VERIFY(QFile::exists(root.filePath("python/b.started")));
+    evaluators->setCurrentIndex(evaluators->findData("arith"));
+    evaluateBlock(*first, "==");
+    QVERIFY(!first->macroIsRunning());
+    QVERIFY(window.findChild<QLabel *>("macroStatus")->text().isEmpty());
+    QVERIFY(first->toPlainText().contains("Unknown variable"));
+}
+
+void MacroTests::evaluatorCancellationAndRestart()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = writeMacro(
+        directory.path(), "slow",
+        "import time\nfrom pathlib import Path\ndef macro(txt):\n"
+        "    Path(__file__).with_suffix('.started').touch()\n"
+        "    time.sleep(0.3)\n    return txt.upper()\n");
+    QSettings("ToyLisp", "ToyLisp").setValue("sanskrit/pythonInterpreter", python);
+    MainWindow window(directory.path());
+    auto *editor = window.findChild<Editor *>();
+    const QString before = ">>\ninput\n==macro\nold\n##\ntail";
+    editor->setPlainText(before);
+    evaluateBlock(*editor);
+    QTRY_VERIFY(QFile::exists(directory.path() + "/slow.started"));
+    // Direct selection execution cannot queue a second macro in the same tab.
+    editor->selectAll();
+    QVERIFY(!window.findChild<QAction *>("runMacroAction")->isEnabled());
+    QSignalSpy diagnostics(editor, &Editor::diagnostic);
+    editor->runMacro(service, path);
+    QCOMPARE(editor->activeEvaluationCount(), 1);
+    // An unrelated edit survives completion without moving the cursor.
+    editor->moveCursor(QTextCursor::End);
+    editor->insertPlainText("!");
+    QTRY_VERIFY(!editor->macroIsRunning());
+    QVERIFY(editor->toPlainText().endsWith("tail!"));
+    QVERIFY(editor->toPlainText().contains("==macro\nINPUT\n##"));
+    QCOMPARE(editor->textCursor().position(), editor->toPlainText().size());
+    // Changing input cancels the evaluation, even if the edit is undone.
+    editor->setPlainText(before);
+    evaluateBlock(*editor);
+    select(*editor, 3, 4);
+    editor->insertPlainText("X");
+    QVERIFY(!editor->macroIsRunning());
+    editor->undo();
+    evaluateBlock(*editor);
+    window.findChild<QAction *>("restartMacroInterpreterAction")->trigger();
+    QVERIFY(!editor->macroIsRunning());
+    QCOMPARE(editor->activeEvaluationCount(), 0);
+    QCOMPARE(editor->toPlainText(), before);
+    QVERIFY(diagnostics.isEmpty());
+    // The restart remains lazy and the next evaluator request recovers.
+    evaluateBlock(*editor);
+    QTRY_VERIFY(!editor->macroIsRunning());
+    QVERIFY(editor->toPlainText().contains("==macro\nINPUT\n##"));
+    evaluateBlock(*editor);
+    window.findChild<QAction *>("cancelEvaluationsAction")->trigger();
+    QVERIFY(!editor->macroIsRunning());
+    QCOMPARE(editor->activeEvaluationCount(), 0);
+    editor->document()->setModified(false);
+    auto *evaluators = window.findChild<QComboBox *>("evaluatorSelector");
+    evaluators->setCurrentIndex(evaluators->findData("macro"));
+    window.resize(1300, 760);
+    window.show();
+    QTest::qWait(20);
+    QVERIFY(window.grab().save("toylisp-macro-evaluator-screenshot.png"));
 }
 
 void MacroTests::replacementAndUndo_data()
@@ -544,6 +750,8 @@ void MacroTests::runtimeGeminiExample()
     QDir root(directory.path());
     QVERIFY(root.mkdir("google"));
     writeMacro(root.filePath("google"), "__init__", "");
+    writeMacro(
+        directory.path(), "ollama", "class Client:\n    def __init__(self, **kwargs): pass\n");
     writeMacro(
         root.filePath("google"),
         "genai",

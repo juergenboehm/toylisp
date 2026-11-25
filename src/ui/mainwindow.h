@@ -12,6 +12,7 @@ class QPlainTextEdit;
 class QLabel;
 class QAction;
 class MacroSelector;
+class MacroEvaluator;
 
 class MainWindow : public QMainWindow
 {
@@ -30,6 +31,7 @@ private:
     sanskrit::Sanskrit sanskrit{sanskritService};
     EvaluatorRegistry registry;
     PythonMacroService macroService;
+    MacroEvaluator *macroEvaluator;
     QTabWidget *editors;
     QPlainTextEdit *output;
     QLabel *lookupStatus;

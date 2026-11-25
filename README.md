@@ -4,9 +4,12 @@ ToyLisp is a Qt5 Widgets desktop editor with evaluatable text blocks. The first
 version targets Linux using C++17 and CMake. Windows portability is intended,
 but a Windows build has not yet been verified.
 
+A short German introduction for Sanskrit students, including Python macros and
+Linux build instructions, is available in [toylisp.md](toylisp.md).
+
 ## Current capabilities
 
-- File, Edit, View and Actions menus; bundled New, Open and Save toolbar icons.
+- File, Edit, View, Actions, Sanskrit and Macros menus; bundled New, Open and Save toolbar icons.
 - Movable, closable editor tabs, a narrow right-hand tools placeholder, and a
   full-width bottom Output tab. Both boundaries can be resized with splitters.
 - UTF-8 text files, Save As, modified indicators and save/discard/cancel prompts.
@@ -41,6 +44,10 @@ but a Windows build has not yet been verified.
 - Asynchronous Python text macros selected in the toolbar, including a local
   Devanagari-to-IAST example. A shared interpreter retains common initialization
   between calls; a macro replaces the current selection in one undo step.
+- A **Macro** evaluator (`==macro`) runs the selected Python macro on an evaluation
+  block. The bundled **sanskrit_lookup** and **sanskrit_verse** macros implement
+  Sanskrit word lookup and verse analysis entirely in Python, with PWG/MW results.
+  The existing C++ Sanskrit evaluators remain active for comparison during migration.
 
 The right-hand Tools tab is deliberately a placeholder. Identity, Lisp and
 Macaulay2 evaluators, configurable font families/default sizes, and additional
@@ -76,7 +83,7 @@ starts with `==` in column one. Bare `==` uses the global default selected in
 the toolbar. `==arith` explicitly selects arithmetic; unknown evaluator names
 produce an error, so `==lisp` is reserved but is not executable yet.
 `==sanskrit` explicitly selects the Sanskrit lookup. `==test` selects the
-development evaluator.
+development evaluator. `==macro` runs the currently selected Python macro.
 
 Return without modifiers at the end of an evaluation line evaluates all text
 between the nearest preceding `>>` and that line, excluding the markers.
@@ -104,12 +111,67 @@ up to 2,000 lines of diagnostic text. Successful results appear in the document.
 Choose a macro in the toolbar and click **Run Macro** to replace the selected
 text in the current editor tab. The button is disabled without a selection or
 while that tab already has a pending macro. Macros use the Python interpreter
-configured under **Sanskrit → Python Interpreter…**; this shares the executable
+configured under **Macros → Python Interpreter…**; this shares the executable
 setting with verse analysis. All tabs share one macro process, separate from the
 Sanskrit worker. It starts on the first macro request and remains available for
 later calls. Requests run one at a time, with up to 16 waiting requests. A blank
 interpreter setting disables both features. Changing it stops the macro process
 and fails its pending requests; the next request uses the new interpreter.
+
+### Macro evaluator and Sanskrit macros
+
+Choose a macro in the toolbar and press Return at the end of `==macro`:
+
+```text
+>>
+कुटुम्बकम्
+==macro
+```
+
+With **sanskrit_lookup** selected, this performs the Python word lookup. With
+**sanskrit_verse** selected, a block can instead contain a verse such as
+`कर्मण्येवाधिकारस्ते मा फलेषु कदाचन`. Select **Macro** as the default evaluator
+to use bare `==`. No text selection is needed for block evaluation. The result
+replaces the region between the evaluation marker and `##` using the usual block
+boundaries and one undo step. Macro exceptions appear in that result region and
+the Output tab. Empty strings produce an empty result block.
+
+These two macros use only the Python standard library, including their own
+transliteration, Cologne HTTP/TEI processing and Dharmamitra integration. They
+need internet access for provider calls, but no Gemini, Ollama, `requests` or
+`indic-transliteration` installation. The word macro accepts one Devanagari word;
+the verse macro converts Devanagari text to IAST for Dharmamitra. Both use the
+saved **Sanskrit → Result Language** selection: German PWG or English MW.
+The verse macro retains Padapāṭha and grammar when dictionary requests fail.
+
+`==sanskrit`, `==sanskrit-verse` and their default-evaluator entries continue to
+use the existing C++ implementation. Its source and tests remain in the project
+for comparison. In particular, the old verse evaluator continues to use MW
+independently of the language setting; the new verse macro respects that setting.
+The interpreter menu has moved to **Macros**, preserving the saved interpreter
+path and using it for both the macro worker and the separate legacy verse worker.
+
+Macros can read the captured application settings without changing `macro(txt)`:
+
+```python
+from macro_context import get_context
+
+def macro(txt):
+    context = get_context()
+    # result_language is "de" or "en"; dictionary is "pwg" or "mw".
+    return context["dictionary"] + ": " + txt
+```
+
+The bundled `macro_context` module is independent of the editable runtime and
+optional SDKs. `get_context()` returns a read-only mapping for the current request;
+call it inside each invocation, including from cached helpers. The macro file
+path and context are captured when the request is submitted, including queued
+requests. Changing the selection or language later does not retarget those jobs.
+Selection macros and block macros share one process, runtime, serial queue and
+one-pending-macro-per-tab limit. Escape, changed blocks, tab closure and interpreter
+restart cancel block macros through the regular evaluator cancellation mechanism.
+
+### Writing and running macros
 
 Add Python files directly under `src/macro/python/`. For example, `foo.py`
 appears as **foo** in the alphabetically sorted list and must define:
@@ -177,7 +239,7 @@ Errors appear in the Output tab and status bar without changing the selected tex
 An unchanged return string leaves the document and undo history untouched.
 Undo changes document text only, not shared Python state or external API calls.
 
-The shared process transport enforces a five-second startup limit, a 40-second
+The shared macro process transport enforces a five-second startup limit, a 360-second
 request limit and a 256 KiB limit per UTF-8 JSON protocol message, including its
 escaping and metadata. Oversized selections/results and timeouts report an error
 without partial insertion. Python exceptions, missing `macro(txt)` functions and
@@ -294,7 +356,7 @@ incomplete-lookup diagnostic; the unsupported entry does not discard them.
 ## Sanskrit verse analysis
 
 Install `requests` and `indic-transliteration` in a Python 3 environment and
-enter its executable under **Sanskrit → Python Interpreter…**. Enter an absolute
+enter its executable under **Macros → Python Interpreter…**. Enter an absolute
 path or a path starting with `~/`. ToyLisp saves the path and applies it
 immediately. The same setting is used by Python text macros; a blank setting
 disables verse analysis and macros. Changing the interpreter also resets the
@@ -507,6 +569,13 @@ results, undo/redo, Python failures, process limits, cancellation and tab lifeti
 It also verifies shared process/module reuse across tabs, fresh macro source,
 queued request order and cancellation, restart/reset behavior and crash recovery.
 The Gemini initialization example is tested offline with a fake SDK, without API calls.
+Macro evaluator tests also cover block replacement, empty results, errors, undo/redo,
+default selection, language/file snapshots in queued requests, shared selection/block
+runtime state, cancellation and restart. They write
+`build/toylisp-macro-evaluator-screenshot.png` independently of optional packages.
+When Python 3 is discoverable at configuration time, `toylisp_sanskrit_macro_tests`
+adds standard-library-only Python regressions using the same recorded Cologne and
+verse fixtures, a local HTTP server and the actual selectable macro entry points.
 The bundled transliteration macro is tested with the real package if available.
 Set `TOYLISP_TEST_PYTHON` to a Python executable with `indic-transliteration` to
 include those cases when the default `python3` lacks the package:
@@ -665,13 +734,16 @@ uses tracing; memory access and undefined-behavior checks remained enabled.
 - `src/ui/`: main window, file workflow and plain-text evaluation editor.
 - `src/macro/`: the shared Python macro service, per-request jobs, bundled dispatcher
   and editable `macro_runtime.py`; `src/macro/python/` contains selectable macro
-  files, including `devanagari_iast.py`.
+  files, including `devanagari_iast.py`, `sanskrit_lookup.py` and `sanskrit_verse.py`.
+  `src/macro/sanskrit_macros/` contains the independent Python Sanskrit helpers.
 - `src/lookups/`: reusable asynchronous HTTP client (`httpclient.h` / `httpclient.cpp`).
 - `src/editor/`: widget-independent block recognition, bracket metadata highlighter
   and matching. This QtGui-based code is compiled into `toylisp_ui`;
   `toylisp_core` contains the shared evaluator infrastructure and arithmetic (QtCore).
 - `src/evaluators/`: shared evaluator interface, result, job and registry.
 - `src/evaluators/arith/`: arithmetic parser, evaluator and persistent session.
+- `src/evaluators/macro/`: the generic asynchronous Macro evaluator, built into
+  `toylisp_ui` and backed by the shared Python macro service.
 - `src/evaluators/lisp500/`: standalone Lisp500 C/library originals and Linux LP64
   ports; Qt evaluator integration remains planned.
 - `src/sanskrit/` contains the Qt-free Sanskrit API and transliteration, the
